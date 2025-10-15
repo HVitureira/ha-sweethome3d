@@ -1,0 +1,44 @@
+name: SweetHome3D
+version: "1.0.0"
+slug: sweethome3d
+description: SweetHome3D JS - Interior design application for Home Assistant
+url: https://github.com/HVitureira/ha-sweethome3d
+arch:
+  - armhf
+  - armv7
+  - aarch64
+  - amd64
+  - i386
+startup: application
+boot: auto
+init: false
+options:
+  php_max_execution_time: 300
+  php_memory_limit: "256M"
+  php_upload_max_filesize: "50M"
+  php_post_max_size: "50M"
+schema:
+  php_max_execution_time: int(30,3600)?
+  php_memory_limit: str?
+  php_upload_max_filesize: str?
+  php_post_max_size: str?
+ports:
+  8099/tcp: 8099
+ports_description:
+  8099/tcp: SweetHome3D Web Interface
+panel_icon: mdi:home-floor-3
+panel_title: SweetHome3D
+panel_admin: false
+webui: http://[HOST]:[PORT:8099]
+ingress: true
+ingress_port: 8099
+ingress_stream: false
+hassio_api: false
+hassio_role: default
+homeassistant_api: false
+auth_api: false
+full_access: false
+apparmor: false
+map:
+  - share:rw
+  - config:rw

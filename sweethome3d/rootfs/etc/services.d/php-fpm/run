@@ -1,0 +1,4 @@
+#!/usr/bin/with-contenv bashio
+
+bashio::log.info "Starting PHP-FPM..."
+exec php-fpm82 --nodaemonize --fpm-config /etc/php82/php-fpm.conf

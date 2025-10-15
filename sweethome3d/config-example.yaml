@@ -1,0 +1,42 @@
+# Example configuration for SweetHome3D Add-on
+# Copy this to your add-on configuration and modify as needed
+
+# Default configuration (recommended for most users)
+php_max_execution_time: 300
+php_memory_limit: "256M"
+php_upload_max_filesize: "50M"
+php_post_max_size: "50M"
+
+# High-performance configuration (for complex designs or slow hardware)
+# php_max_execution_time: 600
+# php_memory_limit: "512M"
+# php_upload_max_filesize: "100M"
+# php_post_max_size: "100M"
+
+# Minimal configuration (for resource-constrained systems)
+# php_max_execution_time: 180
+# php_memory_limit: "128M"
+# php_upload_max_filesize: "25M"
+# php_post_max_size: "25M"
+
+# Configuration explanations:
+#
+# php_max_execution_time:
+#   - Maximum time in seconds for PHP scripts to run
+#   - Increase for complex 3D operations or slow hardware
+#   - Range: 30-3600 seconds
+#
+# php_memory_limit:
+#   - Maximum memory PHP can use
+#   - Increase for large home designs or many furniture items
+#   - Format: "128M", "256M", "512M", "1G", etc.
+#
+# php_upload_max_filesize:
+#   - Maximum size for uploaded files (textures, models, etc.)
+#   - Should match or be smaller than php_post_max_size
+#   - Format: "25M", "50M", "100M", etc.
+#
+# php_post_max_size:
+#   - Maximum size for POST data (includes file uploads)
+#   - Should be larger than php_upload_max_filesize
+#   - Format: "25M", "50M", "100M", etc.
