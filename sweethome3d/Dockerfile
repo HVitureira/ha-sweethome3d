@@ -1,4 +1,7 @@
-ARG BUILD_FROM
+ARG BUILD_FROM=ghcr.io/home-assistant/aarch64-base:3.20
+ARG BUILD_ARCH
+ARG BUILD_VERSION
+
 FROM $BUILD_FROM
 
 # Set shell
@@ -50,9 +53,9 @@ RUN chmod a+x /etc/cont-init.d/* && \
 LABEL \
     io.hass.name="SweetHome3D" \
     io.hass.description="SweetHome3D JS - Interior design application for Home Assistant" \
-    io.hass.arch="${BUILD_ARCH}" \
+    io.hass.arch="${BUILD_ARCH:-aarch64}" \
     io.hass.type="addon" \
-    io.hass.version=${BUILD_VERSION} \
+    io.hass.version="${BUILD_VERSION:-1.0.0}" \
     maintainer="Your Name <your-email@example.com>" \
     org.opencontainers.image.title="SweetHome3D Home Assistant Add-on" \
     org.opencontainers.image.description="SweetHome3D JS - Interior design application for Home Assistant" \
