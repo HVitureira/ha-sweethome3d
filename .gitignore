@@ -56,5 +56,4 @@ home-assistant_v2.db
 .storage/
 deps/
 tts/
-www/
 .google_calendars.yaml
