@@ -1,8 +1,8 @@
-ARG BUILD_FROM=ghcr.io/home-assistant/aarch64-base:3.20
+ARG BUILD_FROM
 ARG BUILD_ARCH
 ARG BUILD_VERSION
 
-FROM $BUILD_FROM
+FROM ${BUILD_FROM}
 
 # Set shell
 SHELL ["/bin/sh", "-o", "pipefail", "-c"]
