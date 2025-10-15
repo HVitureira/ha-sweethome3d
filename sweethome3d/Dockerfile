@@ -21,7 +21,10 @@ RUN apk add --no-cache \
     curl \
     bash && \
     # Optimize for ARM architectures
-    rm -rf /var/cache/apk/*
+    rm -rf /var/cache/apk/* && \
+    # Disable auto-start services to prevent conflicts with s6
+    rc-update del nginx default || true && \
+    rc-update del php-fpm82 default || true
 
 # Copy nginx configuration
 COPY rootfs/etc/nginx/ /etc/nginx/
@@ -47,7 +50,10 @@ RUN chmod a+x /etc/cont-init.d/* && \
     mkdir -p /var/www/html/data && \
     chown -R nginx:nginx /var/www/html && \
     chmod 755 /var/www/html && \
-    chmod 777 /var/www/html/data
+    chmod 777 /var/www/html/data && \
+    # Ensure run directory exists and has correct permissions
+    mkdir -p /var/run && \
+    chown nginx:nginx /var/run
 
 # Labels
 LABEL \
@@ -64,5 +70,6 @@ LABEL \
 
 EXPOSE 8099
 
-# Use simple startup script for local testing
+# When running locally (like with docker-compose), use start.sh
+# When running as HA addon, the BUILD_FROM will have s6-overlay and this CMD will be overridden
 CMD ["/start.sh"]

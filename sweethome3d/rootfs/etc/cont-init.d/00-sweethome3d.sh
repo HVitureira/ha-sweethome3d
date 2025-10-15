@@ -2,6 +2,11 @@
 
 bashio::log.info "Starting SweetHome3D addon..."
 
+# Clean up any existing sockets and pid files
+rm -f /var/run/php82-fpm.sock
+rm -f /var/run/php82-fpm.pid
+rm -f /var/run/nginx.pid
+
 # Get addon options
 PHP_MAX_EXECUTION_TIME=$(bashio::config 'php_max_execution_time')
 PHP_MEMORY_LIMIT=$(bashio::config 'php_memory_limit')
