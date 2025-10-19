@@ -1613,6 +1613,8 @@ body {
 
 <script type="text/javascript">
 var urlBase = window.location.href.substring(0, window.location.href.lastIndexOf("/") + 1);
+console.log('🔧 Initializing SweetHome3D with urlBase:', urlBase);
+
 var application = new SweetHome3DJSApplication(
     {readHomeURL:          urlBase + "data/%s.sh3x",
      writeHomeURL:         urlBase + "writeData.php?path=%s.sh3x",
@@ -1621,8 +1623,9 @@ var application = new SweetHome3DJSApplication(
      listHomesURL:         urlBase + "listHomes.php",
      deleteHomeURL:        urlBase + "deleteHome.php?home=%s",
      writePreferencesURL:  urlBase + "writeData.php?path=userPreferences.json",
-     readPreferencesURL:   urlBase + "data/userPreferences.json",
-     furnitureCatalogURLs: [urlBase + "lib/resources/DefaultFurnitureCatalog.json"],
+     readPreferencesURL:   urlBase + "data/userPreferences.json",     furnitureCatalogURLs: [
+      urlBase + "lib/resources/DefaultFurnitureCatalog.json"
+     ],
      furnitureResourcesURLBase: urlBase,
      texturesCatalogURLs:  [urlBase + "lib/resources/DefaultTexturesCatalog.json"],
      texturesResourcesURLBase: urlBase,
@@ -1631,10 +1634,14 @@ var application = new SweetHome3DJSApplication(
      autoRecovery: true,
      defaultHomeName: "home-d78b0c75-7b64-4a70-a722-37c8dd6a2b81"
     });
+
+console.log('✅ SweetHome3D application initialized');
     
-  setTimeout(function() {
-      application.addHome(application.createHome());
-    });
+setTimeout(function() {
+    console.log('🏠 Adding default home...');
+    application.addHome(application.createHome());
+    console.log('✅ Default home added');
+}, 500);
 </script>
 <!-- Home Assistant Smart Device Integration -->
 <script type="text/javascript">
@@ -1644,52 +1651,110 @@ var application = new SweetHome3DJSApplication(
   // Wait for application to be ready
   window.addEventListener('load', function() {
     setTimeout(initHAIntegration, 1000);
-  });
+  });  
   
   function initHAIntegration() {
     console.log('🏠 Initializing Home Assistant integration...');
     
-    // Load HA Device Catalog
-    loadHADeviceCatalog();
-    
-    // Add Export menu item (will be added when menus are created)
-    addExportMenuItem();
-    
-    // Add device counter UI element
-    addDeviceCounter();
+    // Wait a bit longer for the application to fully initialize
+    setTimeout(() => {
+      // Add Export menu item (will be added when menus are created)
+      addExportMenuItem();
+      
+      // Add device counter UI element
+      addDeviceCounter();
+      
+      // Check if HA devices are loaded in the furniture catalog
+      checkHADevicesLoaded();
+    }, 2000); // Increased delay to 2 seconds
   }
-  
-  /**
-   * Load Home Assistant device catalog
+    /**
+   * Check if HA devices are loaded in the furniture catalog
    */
-  function loadHADeviceCatalog() {
-    fetch('lib/resources/HADeviceCatalog.json')
-      .then(response => {
-        if (!response.ok) {
-          console.warn('⚠️ HA device catalog not found at lib/resources/HADeviceCatalog.json');
-          return null;
-        }
-        return response.json();
-      })
-      .then(catalog => {
-        if (!catalog) return;
-        
-        // Merge with existing furniture catalog
+  function checkHADevicesLoaded() {
+    console.log('🔍 Checking for HA devices in furniture catalog...');
+    
+    setTimeout(() => {
+      try {
         if (window.application && window.application.getUserPreferences) {
           const prefs = window.application.getUserPreferences();
           if (prefs && prefs.getFurnitureCatalog) {
-            try {
-              // The catalog will be merged automatically when furniture library loads
-              showNotification('✓ Smart devices loaded! Check furniture catalog.', 'success');
-            } catch (e) {
-              console.error('Error merging catalog:', e);
+            const catalog = prefs.getFurnitureCatalog();
+            if (catalog && catalog.getCategories) {
+              const categories = catalog.getCategories();
+              console.log('📂 Total categories found:', categories.length);
+              
+              // Look for Smart device categories
+              let smartCategoriesCount = 0;
+              let smartDevicesCount = 0;
+              
+              categories.forEach(category => {
+                const categoryName = category.getName ? category.getName() : category;
+                console.log('  📁 Category:', categoryName);
+                
+                if (categoryName.includes('Smart')) {
+                  smartCategoriesCount++;
+                  console.log('    ✅ Found Smart category:', categoryName);
+                  
+                  // Count devices in this category
+                  try {
+                    const furniture = category.getFurniture ? category.getFurniture() : [];
+                    smartDevicesCount += furniture.length;
+                    console.log('    📦 Smart devices in category:', furniture.length);
+                  } catch (e) {
+                    console.log('    ⚠️ Could not count devices in category:', e.message);
+                  }
+                }
+              });
+              
+              if (smartCategoriesCount > 0) {
+                console.log(`✅ HA integration successful! Found ${smartCategoriesCount} Smart categories with ${smartDevicesCount} devices`);
+                showNotification(`✅ Smart Home devices loaded! Found ${smartDevicesCount} devices in ${smartCategoriesCount} categories.`, 'success');
+              } else {
+                console.warn('⚠️ No Smart device categories found in furniture catalog');
+                showNotification('⚠️ Smart device categories not found. Check DefaultFurnitureCatalog.json', 'warning');
+              }
             }
           }
         }
-      })
-      .catch(error => {
-        console.error('❌ Failed to load HA device catalog:', error);
-      });
+      } catch (e) {
+        console.error('❌ Error checking HA devices:', e);
+        showNotification('❌ Error checking smart devices: ' + e.message, 'error');
+      }
+    }, 3000); // Wait 3 seconds for catalog to load
+  }
+    /**
+   * Wait for application to be ready
+   */
+  function waitForApplication(callback, attempts = 0) {
+    if (attempts > 50) { // Max 5 seconds
+      console.error('❌ Timeout waiting for application');
+      return;
+    }
+    
+    if (window.application && window.application.getUserPreferences) {
+      callback();
+    } else {
+      setTimeout(() => waitForApplication(callback, attempts + 1), 100);
+    }
+  }
+  
+  /**
+   * Refresh furniture library UI
+   */
+  function refreshFurnitureLibrary() {
+    try {
+      // Try to find and refresh the furniture library component
+      if (window.application && window.application.getFurnitureLibrary) {
+        const library = window.application.getFurnitureLibrary();
+        if (library && library.repaint) {
+          library.repaint();
+          console.log('🔄 Refreshed furniture library UI');
+        }
+      }
+    } catch (e) {
+      console.log('ℹ️ Could not refresh furniture library UI:', e.message);
+    }
   }
   
   /**
@@ -1965,13 +2030,41 @@ var application = new SweetHome3DJSApplication(
       // Ignore errors
     }
   }
-  
-  /**
+    /**
    * UI Helper functions
    */
   function showNotification(message, type) {
     console.log('[' + type + '] ' + message);
-    // Could add a toast notification here
+    
+    // Create a simple toast notification
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 10000; ' +
+                          'padding: 12px 20px; border-radius: 4px; color: white; font-size: 14px; ' +
+                          'max-width: 400px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);';
+    
+    switch(type) {
+      case 'success':
+        toast.style.backgroundColor = '#4CAF50';
+        break;
+      case 'warning':
+        toast.style.backgroundColor = '#FF9800';
+        break;
+      case 'error':
+        toast.style.backgroundColor = '#F44336';
+        break;
+      default:
+        toast.style.backgroundColor = '#2196F3';
+    }
+    
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+      if (toast.parentNode) {
+        toast.parentNode.removeChild(toast);
+      }
+    }, 5000);
   }
   
   function showLoading(message) {
