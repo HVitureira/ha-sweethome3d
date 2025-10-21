@@ -1613,6 +1613,8 @@ body {
 
 <script type="text/javascript">
 var urlBase = window.location.href.substring(0, window.location.href.lastIndexOf("/") + 1);
+console.log('🔧 Initializing SweetHome3D with urlBase:', urlBase);
+
 var application = new SweetHome3DJSApplication(
     {readHomeURL:          urlBase + "data/%s.sh3x",
      writeHomeURL:         urlBase + "writeData.php?path=%s.sh3x",
@@ -1621,8 +1623,9 @@ var application = new SweetHome3DJSApplication(
      listHomesURL:         urlBase + "listHomes.php",
      deleteHomeURL:        urlBase + "deleteHome.php?home=%s",
      writePreferencesURL:  urlBase + "writeData.php?path=userPreferences.json",
-     readPreferencesURL:   urlBase + "data/userPreferences.json",
-     furnitureCatalogURLs: [urlBase + "lib/resources/DefaultFurnitureCatalog.json"],
+     readPreferencesURL:   urlBase + "data/userPreferences.json",     furnitureCatalogURLs: [
+      urlBase + "lib/resources/DefaultFurnitureCatalog.json"
+     ],
      furnitureResourcesURLBase: urlBase,
      texturesCatalogURLs:  [urlBase + "lib/resources/DefaultTexturesCatalog.json"],
      texturesResourcesURLBase: urlBase,
@@ -1631,11 +1634,471 @@ var application = new SweetHome3DJSApplication(
      autoRecovery: true,
      defaultHomeName: "home-d78b0c75-7b64-4a70-a722-37c8dd6a2b81"
     });
-    
-  setTimeout(function() {
-      application.addHome(application.createHome());
-    });
-</script>
 
+console.log('✅ SweetHome3D application initialized');
+    
+setTimeout(function() {
+    console.log('🏠 Adding default home...');
+    application.addHome(application.createHome());
+    console.log('✅ Default home added');
+}, 500);
+</script>
+<!-- Home Assistant Smart Device Integration -->
+<script type="text/javascript">
+(function() {
+  'use strict';
+  
+  // Wait for application to be ready
+  window.addEventListener('load', function() {
+    setTimeout(initHAIntegration, 1000);
+  });  
+  
+  function initHAIntegration() {
+    console.log('🏠 Initializing Home Assistant integration...');
+    
+    // Wait a bit longer for the application to fully initialize
+    setTimeout(() => {
+      // Add Export menu item (will be added when menus are created)
+      addExportMenuItem();
+      
+      // Add device counter UI element
+      addDeviceCounter();
+      
+      // Check if HA devices are loaded in the furniture catalog
+      checkHADevicesLoaded();
+    }, 2000); // Increased delay to 2 seconds
+  }
+    /**
+   * Check if HA devices are loaded in the furniture catalog
+   */
+  function checkHADevicesLoaded() {
+    console.log('🔍 Checking for HA devices in furniture catalog...');
+    
+    setTimeout(() => {
+      try {
+        if (window.application && window.application.getUserPreferences) {
+          const prefs = window.application.getUserPreferences();
+          if (prefs && prefs.getFurnitureCatalog) {
+            const catalog = prefs.getFurnitureCatalog();
+            if (catalog && catalog.getCategories) {
+              const categories = catalog.getCategories();
+              console.log('📂 Total categories found:', categories.length);
+              
+              // Look for Smart device categories
+              let smartCategoriesCount = 0;
+              let smartDevicesCount = 0;
+              
+              categories.forEach(category => {
+                const categoryName = category.getName ? category.getName() : category;
+                console.log('  📁 Category:', categoryName);
+                
+                if (categoryName.includes('Smart')) {
+                  smartCategoriesCount++;
+                  console.log('    ✅ Found Smart category:', categoryName);
+                  
+                  // Count devices in this category
+                  try {
+                    const furniture = category.getFurniture ? category.getFurniture() : [];
+                    smartDevicesCount += furniture.length;
+                    console.log('    📦 Smart devices in category:', furniture.length);
+                  } catch (e) {
+                    console.log('    ⚠️ Could not count devices in category:', e.message);
+                  }
+                }
+              });
+              
+              if (smartCategoriesCount > 0) {
+                console.log(`✅ HA integration successful! Found ${smartCategoriesCount} Smart categories with ${smartDevicesCount} devices`);
+                showNotification(`✅ Smart Home devices loaded! Found ${smartDevicesCount} devices in ${smartCategoriesCount} categories.`, 'success');
+              } else {
+                console.warn('⚠️ No Smart device categories found in furniture catalog');
+                showNotification('⚠️ Smart device categories not found. Check DefaultFurnitureCatalog.json', 'warning');
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error('❌ Error checking HA devices:', e);
+        showNotification('❌ Error checking smart devices: ' + e.message, 'error');
+      }
+    }, 3000); // Wait 3 seconds for catalog to load
+  }
+    /**
+   * Wait for application to be ready
+   */
+  function waitForApplication(callback, attempts = 0) {
+    if (attempts > 50) { // Max 5 seconds
+      console.error('❌ Timeout waiting for application');
+      return;
+    }
+    
+    if (window.application && window.application.getUserPreferences) {
+      callback();
+    } else {
+      setTimeout(() => waitForApplication(callback, attempts + 1), 100);
+    }
+  }
+  
+  /**
+   * Refresh furniture library UI
+   */
+  function refreshFurnitureLibrary() {
+    try {
+      // Try to find and refresh the furniture library component
+      if (window.application && window.application.getFurnitureLibrary) {
+        const library = window.application.getFurnitureLibrary();
+        if (library && library.repaint) {
+          library.repaint();
+          console.log('🔄 Refreshed furniture library UI');
+        }
+      }
+    } catch (e) {
+      console.log('ℹ️ Could not refresh furniture library UI:', e.message);
+    }
+  }
+  
+  /**
+   * Add Export for Unity menu item
+   */
+  function addExportMenuItem() {
+    // Wait for application menu to exist
+    const checkMenu = setInterval(function() {
+      if (window.application && window.application.getMenuBar) {
+        clearInterval(checkMenu);
+        
+        try {
+          const menuBar = window.application.getMenuBar();
+          if (menuBar) {
+            // Find File menu
+            const menus = menuBar.getSubElements ? menuBar.getSubElements() : [];
+            
+            for (let i = 0; i < menus.length; i++) {
+              const menu = menus[i];
+              if (menu.getText && menu.getText().includes('File')) {
+                // Add separator and new menu item
+                const exportItem = {
+                  text: 'Export for Unity...',
+                  action: function() {
+                    exportForUnity();
+                  }
+                };
+                
+                // Try to add to menu
+                if (menu.addSeparator) {
+                  menu.addSeparator();
+                }
+                if (menu.add) {
+                  menu.add(exportItem);
+                }
+                
+                console.log('✅ Export for Unity menu item added');
+                break;
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Error adding menu item:', e);
+        }
+      }
+    }, 500);
+    
+    // Stop checking after 10 seconds
+    setTimeout(function() {
+      clearInterval(checkMenu);
+    }, 10000);
+  }
+  
+  /**
+   * Export floor plan with device data for Unity
+   */
+  function exportForUnity() {
+    console.log('📤 Starting Unity export...');
+    
+    if (!window.application) {
+      showError('Application not ready');
+      return;
+    }
+    
+    try {
+      const home = window.application.getHome();
+      
+      if (!home) {
+        showError('No home loaded');
+        return;
+      }
+      
+      // Count smart devices
+      const deviceCount = countHADevices(home);
+      
+      if (deviceCount === 0) {
+        const proceed = confirm(
+          'No smart devices found in the floor plan.\n\n' +
+          'Add smart devices from the "Smart Devices" category in the furniture catalog before exporting.\n\n' +
+          'Export anyway?'
+        );
+        if (!proceed) return;
+      }
+      
+      // Serialize home data
+      const homeData = serializeHome(home);
+      const homeName = home.getName ? home.getName() : 'smart-home';
+      
+      // Show loading
+      showLoading('Exporting for Unity...');
+      
+      // Send to export endpoint
+      fetch('exportForUnity.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: 'home_name=' + encodeURIComponent(homeName) + 
+              '&home_data=' + encodeURIComponent(homeData)
+      })
+      .then(response => response.json())
+      .then(result => {
+        hideLoading();
+        
+        if (result.success) {
+          showExportSuccessDialog(result);
+        } else {
+          showError('Export failed: ' + result.error);
+        }
+      })
+      .catch(error => {
+        hideLoading();
+        showError('Export failed: ' + error.message);
+        console.error('Export error:', error);
+      });
+      
+    } catch (e) {
+      hideLoading();
+      showError('Export failed: ' + e.message);
+      console.error('Export exception:', e);
+    }
+  }
+  
+  /**
+   * Serialize home to JSON
+   */
+  function serializeHome(home) {
+    const data = {
+      furniture: [],
+      rooms: [],
+      walls: []
+    };
+    
+    // Serialize furniture (including devices)
+    if (home.getFurniture) {
+      const furniture = home.getFurniture();
+      for (let i = 0; i < furniture.length; i++) {
+        const piece = furniture[i];
+        data.furniture.push({
+          catalogId: piece.getCatalogId ? piece.getCatalogId() : '',
+          name: piece.getName ? piece.getName() : '',
+          x: piece.getX ? piece.getX() : 0,
+          y: piece.getY ? piece.getY() : 0,
+          elevation: piece.getElevation ? piece.getElevation() : 0,
+          angle: piece.getAngle ? piece.getAngle() : 0
+        });
+      }
+    }
+    
+    // Serialize rooms
+    if (home.getRooms) {
+      const rooms = home.getRooms();
+      for (let i = 0; i < rooms.length; i++) {
+        const room = rooms[i];
+        const points = [];
+        
+        if (room.getPoints) {
+          const roomPoints = room.getPoints();
+          for (let j = 0; j < roomPoints.length; j++) {
+            points.push([roomPoints[j][0], roomPoints[j][1]]);
+          }
+        }
+        
+        data.rooms.push({
+          name: room.getName ? room.getName() : '',
+          points: points,
+          area: room.getArea ? room.getArea() : 0,
+          level: room.getLevel ? {name: room.getLevel().getName()} : {name: 'Ground Floor'}
+        });
+      }
+    }
+    
+    // Serialize walls
+    if (home.getWalls) {
+      const walls = home.getWalls();
+      for (let i = 0; i < walls.length; i++) {
+        const wall = walls[i];
+        data.walls.push({
+          xStart: wall.getXStart ? wall.getXStart() : 0,
+          yStart: wall.getYStart ? wall.getYStart() : 0,
+          xEnd: wall.getXEnd ? wall.getXEnd() : 0,
+          yEnd: wall.getYEnd ? wall.getYEnd() : 0,
+          height: wall.getHeight ? wall.getHeight() : 250,
+          thickness: wall.getThickness ? wall.getThickness() : 10
+        });
+      }
+    }
+    
+    return JSON.stringify(data);
+  }
+  
+  /**
+   * Count HA devices in home
+   */
+  function countHADevices(home) {
+    let count = 0;
+    
+    if (home.getFurniture) {
+      const furniture = home.getFurniture();
+      for (let i = 0; i < furniture.length; i++) {
+        const piece = furniture[i];
+        const catalogId = piece.getCatalogId ? piece.getCatalogId() : '';
+        if (catalogId.indexOf('ha_') === 0) {
+          count++;
+        }
+      }
+    }
+    
+    return count;
+  }
+  
+  /**
+   * Show export success dialog
+   */
+  function showExportSuccessDialog(result) {
+    let message = '✅ Export successful!\n\n';
+    message += 'Devices exported: ' + result.devices_count + '\n';
+    message += 'Rooms: ' + result.rooms_count + '\n\n';
+    message += 'Files saved:\n';
+    message += '• ' + result.latest_path + '\n';
+    message += '• ' + result.export_path + '\n';
+    
+    if (result.ha_path_copied) {
+      message += '\n✓ Copied to Home Assistant (/config/www/models/)';
+    }
+    
+    if (result.devices && result.devices.length > 0) {
+      message += '\n\nDevices:\n';
+      result.devices.forEach(function(device) {
+        message += '• ' + device.name + ' (' + device.type + ')\n';
+      });
+    }
+    
+    alert(message);
+    console.log('✅ Export complete:', result);
+  }
+  
+  /**
+   * Add device counter to UI
+   */
+  function addDeviceCounter() {
+    // Add counter element to toolbar or catalog panel
+    const catalogPane = document.getElementById('catalog-furniture-pane');
+    if (catalogPane) {
+      const counter = document.createElement('div');
+      counter.id = 'ha-device-counter';
+      counter.style.cssText = 'position: absolute; bottom: 5px; right: 5px; ' +
+                              'background: #4CAF50; color: white; padding: 5px 10px; ' +
+                              'border-radius: 3px; font-size: 11px; z-index: 100;';
+      counter.textContent = '0 smart devices';
+      catalogPane.appendChild(counter);
+      
+      // Update counter periodically
+      setInterval(updateDeviceCounter, 2000);
+    }
+  }
+  
+  /**
+   * Update device counter
+   */
+  function updateDeviceCounter() {
+    const counter = document.getElementById('ha-device-counter');
+    if (!counter || !window.application) return;
+    
+    try {
+      const home = window.application.getHome();
+      if (home) {
+        const count = countHADevices(home);
+        counter.textContent = count + ' smart device' + (count !== 1 ? 's' : '');
+        counter.style.background = count > 0 ? '#4CAF50' : '#999';
+      }
+    } catch (e) {
+      // Ignore errors
+    }
+  }
+    /**
+   * UI Helper functions
+   */
+  function showNotification(message, type) {
+    console.log('[' + type + '] ' + message);
+    
+    // Create a simple toast notification
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 10000; ' +
+                          'padding: 12px 20px; border-radius: 4px; color: white; font-size: 14px; ' +
+                          'max-width: 400px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);';
+    
+    switch(type) {
+      case 'success':
+        toast.style.backgroundColor = '#4CAF50';
+        break;
+      case 'warning':
+        toast.style.backgroundColor = '#FF9800';
+        break;
+      case 'error':
+        toast.style.backgroundColor = '#F44336';
+        break;
+      default:
+        toast.style.backgroundColor = '#2196F3';
+    }
+    
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+      if (toast.parentNode) {
+        toast.parentNode.removeChild(toast);
+      }
+    }, 5000);
+  }
+  
+  function showLoading(message) {
+    // Create loading overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'ha-loading-overlay';
+    overlay.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; ' +
+                            'background: rgba(0,0,0,0.7); z-index: 10000; ' +
+                            'display: flex; align-items: center; justify-content: center;';
+    
+    const spinner = document.createElement('div');
+    spinner.style.cssText = 'background: white; padding: 30px; border-radius: 8px; ' +
+                            'text-align: center;';
+    spinner.innerHTML = '<div style="font-size: 18px; margin-bottom: 10px;">⏳</div>' +
+                        '<div>' + message + '</div>';
+    
+    overlay.appendChild(spinner);
+    document.body.appendChild(overlay);
+  }
+  
+  function hideLoading() {
+    const overlay = document.getElementById('ha-loading-overlay');
+    if (overlay) {
+      overlay.remove();
+    }
+  }
+  
+  function showError(message) {
+    alert('❌ Error: ' + message);
+    console.error('Error:', message);
+  }
+  
+  console.log('✅ HA Integration script loaded');
+})();
+</script>
 </body>
 </html>
