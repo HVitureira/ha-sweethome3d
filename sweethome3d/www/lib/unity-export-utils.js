@@ -80,15 +80,26 @@ class UnityExportUtilities {
 
   /**
    * Extract device metadata for Unity
+   * 
+   * NOTE: This function filters to ONLY export IoT/smart devices.
+   * To export ALL furniture instead, change the condition from:
+   *   if (isDevice) { devices.push(...) }
+   * to:
+   *   devices.push(...) // (remove the if check)
+   * 
+   * The Unity import script expects only IoT devices, but you can modify
+   * it to handle all furniture if needed.
    */
   static extractDeviceMetadata(home) {
     const devices = [];
     const rooms = [];
     const walls = [];
     
-    // Extract IoT devices from furniture
+    // Extract IoT devices from furniture (filtered)
     if (home.getFurniture) {
       const furniture = home.getFurniture();
+      let deviceIndex = 0;
+      
       for (let i = 0; i < furniture.length; i++) {
         const piece = furniture[i];
         const catalogId = piece.getCatalogId ? piece.getCatalogId() : '';
@@ -96,26 +107,30 @@ class UnityExportUtilities {
         // Check if it's an IoT device (customize detection logic)
         const isDevice = this.isIoTDevice(catalogId, piece);
         
-        devices.push({
-          id: `device_${i}`,
-          name: piece.getName ? piece.getName() : `Device ${i}`,
-          type: this.getDeviceType(catalogId, piece),
-          catalogId: catalogId,
-          position: {
-            x: (piece.getX ? piece.getX() : 0) * 0.01, // cm to meters
-            y: (piece.getElevation ? piece.getElevation() : 0) * 0.01,
-            z: (piece.getY ? piece.getY() : 0) * 0.01
-          },
-          rotation: {
-            y: piece.getAngle ? piece.getAngle() * (180 / Math.PI) : 0 // radians to degrees
-          },
-          isIoTDevice: isDevice,
-          dimensions: {
-            width: (piece.getWidth ? piece.getWidth() : 0) * 0.01,
-            height: (piece.getHeight ? piece.getHeight() : 0) * 0.01,
-            depth: (piece.getDepth ? piece.getDepth() : 0) * 0.01
-          }
-        });
+        // FILTER: Only add IoT devices to the export
+        if (isDevice) {
+          devices.push({
+            id: `device_${deviceIndex}`,
+            name: piece.getName ? piece.getName() : `Device ${deviceIndex}`,
+            type: this.getDeviceType(catalogId, piece),
+            catalogId: catalogId,
+            position: {
+              x: (piece.getX ? piece.getX() : 0) * 0.01, // cm to meters
+              y: (piece.getElevation ? piece.getElevation() : 0) * 0.01,
+              z: (piece.getY ? piece.getY() : 0) * 0.01
+            },
+            rotation: {
+              y: piece.getAngle ? piece.getAngle() * (180 / Math.PI) : 0 // radians to degrees
+            },
+            isIoTDevice: true, // Always true since we filtered
+            dimensions: {
+              width: (piece.getWidth ? piece.getWidth() : 0) * 0.01,
+              height: (piece.getHeight ? piece.getHeight() : 0) * 0.01,
+              depth: (piece.getDepth ? piece.getDepth() : 0) * 0.01
+            }
+          });
+          deviceIndex++;
+        }
       }
     }
     
@@ -186,7 +201,7 @@ class UnityExportUtilities {
   }
   
   /**
-   * Check if furniture piece is an IoT device
+   * Check if a furniture piece is an IoT device
    */
   static isIoTDevice(catalogId, piece) {
     const deviceKeywords = [
@@ -196,11 +211,18 @@ class UnityExportUtilities {
     ];
     
     const name = (piece.getName ? piece.getName() : '').toLowerCase();
-    const id = catalogId.toLowerCase();
     
-    return deviceKeywords.some(keyword => 
-      name.includes(keyword) || id.includes(keyword)
-    );
+    // Check name first (works even if catalogId is null)
+    const nameMatch = deviceKeywords.some(keyword => name.includes(keyword));
+    if (nameMatch) return true;
+    
+    // Check catalogId if available
+    if (catalogId) {
+      const id = catalogId.toLowerCase();
+      return deviceKeywords.some(keyword => id.includes(keyword));
+    }
+    
+    return false;
   }
   
   /**
@@ -208,7 +230,7 @@ class UnityExportUtilities {
    */
   static getDeviceType(catalogId, piece) {
     const name = (piece.getName ? piece.getName() : '').toLowerCase();
-    const id = catalogId.toLowerCase();
+    const id = catalogId ? catalogId.toLowerCase() : '';
     const combined = name + ' ' + id;
     
     if (combined.includes('temperature') || combined.includes('temp')) {

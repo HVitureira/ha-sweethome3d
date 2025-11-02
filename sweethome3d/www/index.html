@@ -1904,8 +1904,9 @@
 
     /**
      * Export floor plan with device data for Unity
+     * Uses UnityExportUtilities class from unity-export-utils.js
      */
-    function exportForUnity() {
+    async function exportForUnity() {
       console.log('📤 Starting Unity export...');
       
       if (!window.application) {
@@ -1913,17 +1914,25 @@
         return;
       }
       
+      // Check if UnityExportUtilities is loaded
+      if (typeof UnityExportUtilities === 'undefined') {
+        showError('Unity export utilities not loaded. Please refresh the page.');
+        console.error('UnityExportUtilities class not found');
+        return;
+      }
+      
       try {
-        const homes = window.application.getHomes();  // ← Changed to getHomes()
+        const homes = window.application.getHomes();
         
         if (!homes || homes.length === 0) {
           showError('No home loaded');
           return;
         }
         
-        const home = homes[0];  // ← Get the first/active home
+        const home = homes[0];
+        const homeName = home.getName ? home.getName() : 'smart-home';
         
-        // Count smart devices
+        // Count smart devices (using ha_ prefix check)
         const deviceCount = countHADevices(home);
         
         if (deviceCount === 0) {
@@ -1935,42 +1944,37 @@
           if (!proceed) return;
         }
         
-        // Serialize home data
-        const homeData = serializeHome(home);
-        const homeName = home.getName ? home.getName() : 'smart-home';
+        showLoading('Exporting for Unity: 3D model, device data, and Unity import script...');
         
-        // Show loading
-        showLoading('Exporting for Unity...');
+        // Use UnityExportUtilities for complete export
+        const result = await UnityExportUtilities.exportForUnity(
+          home,
+          window.homeComponent3D || null,
+          homeName
+        );
         
-        // Send to export endpoint
-        fetch('exportForUnity.php', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded'
-          },
-          body: 'home_name=' + encodeURIComponent(homeName) + 
-                '&home_data=' + encodeURIComponent(homeData)
-        })
-        .then(response => response.json())
-        .then(result => {
-          hideLoading();
-          
-          if (result.success) {
-            showExportSuccessDialog(result);
-          } else {
-            showError('Export failed: ' + result.error);
-          }
-        })
-        .catch(error => {
-          hideLoading();
-          showError('Export failed: ' + error.message);
-          console.error('Export error:', error);
-        });
+        hideLoading();
+        
+        // Show success message
+        const message = `Unity export complete!\n\n` +
+          `📦 3D Geometry: ${homeName}_geometry.zip\n` +
+          `   - ${result.geometry.vertices} vertices\n` +
+          `   - ${result.geometry.faces} faces\n` +
+          `   - ${result.geometry.materials} materials\n\n` +
+          `📋 Device Data: ${homeName}_devices.json\n` +
+          `   - ${result.devices} smart device${result.devices !== 1 ? 's' : ''}\n` +
+          `   - ${result.rooms} room${result.rooms !== 1 ? 's' : ''}\n\n` +
+          `📜 Unity Import Script: ${homeName}_Import.cs\n\n` +
+          `Import all files into Unity for your digital twin.`;
+        
+        showNotification(message, 'success');
+        console.log('✅ Unity export complete:', result);
         
       } catch (e) {
         hideLoading();
-        showError('Export failed: ' + e.message);
-        console.error('Export exception:', e);
+        showError('Unity export failed: ' + e.message);
+        console.error('❌ Unity export error:', e);
+        console.error('Stack trace:', e.stack);
       }
     }
 
@@ -2121,7 +2125,8 @@ async function exportToOBJ() {
           for (let i = 0; i < furniture.length; i++) {
             const piece = furniture[i];
             const catalogId = piece.getCatalogId ? piece.getCatalogId() : '';
-            if (catalogId.indexOf('ha_') === 0) {
+            // Fix: Ensure catalogId is not null before calling indexOf
+            if (catalogId && catalogId.indexOf('ha_') === 0) {
               count++;
             }
           }
