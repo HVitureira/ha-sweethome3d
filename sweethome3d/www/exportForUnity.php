@@ -2,6 +2,9 @@
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 
+require_once __DIR__ . '/saveEntityMapping.php';
+$devices = extractDevices($homeData);
+
 // Get input
 $homeName = $_POST['home_name'] ?? 'smart-home';
 $homeDataRaw = $_POST['home_data'] ?? null;
@@ -49,6 +52,11 @@ echo json_encode([
     'obj_path' => isset($objData) ? 'data/exports/' . $filename . '_model.obj' : null,  // NEW
     'timestamp' => $timestamp,
     'devices' => array_map(function($d) {
-        return ['id' => $d['id'], 'name' => $d['name'], 'type' => $d['type']];
+        return [
+            'id' => $d['id'], 
+            'name' => $d['name'], 
+            'type' => $d['type'],
+            'entity_id' => $d['entity_id'] ?? null  // ADD THIS LINE
+        ];
     }, $devices)
 ]);
