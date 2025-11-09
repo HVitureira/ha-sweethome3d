@@ -535,6 +535,18 @@
           <input name="description-input" size="50" type="text" />
         </div>
 
+          <!-- HOME ASSISTANT ENTITY ID FIELD -->
+        <div class="label-cell ha-only" data-name="ha-entity-label" style="display:none;">
+          <div>🏠 HA Entity ID:</div>
+        </div>
+        <div class="ha-only" data-name="ha-entity-input-container" style="display:none;">
+          <input name="ha-entity-input" size="50" type="text" placeholder="sensor.living_room_temperature"
+            pattern="[a-z_]+\.[a-z0-9_]+" title="Format: domain.entity_name (e.g., sensor.living_room_temperature)" />
+          <div style="font-size: 0.85em; color: #666; margin-top: 0.3em;">
+            Enter the Home Assistant entity_id for this smart device
+          </div>
+        </div>
+
         <div class="label-cell">
           <div data-name="price-label">@{HomeFurniturePanel.priceLabel.text}</div>
         </div>
@@ -1688,6 +1700,7 @@
           initHAIntegration();
           addExportButtons();  // Floating buttons (always visible)
           addExportKeyboardShortcuts();  // Ctrl+E shortcuts
+          initHAEntityField();  // Initialize HA entity ID field in furniture dialog
         }, 1000);
       });
   
@@ -1868,6 +1881,298 @@
           }
         }, 3000); // Wait 3 seconds for catalog to load
       }
+      /**
+       * Initialize HA Entity ID field in furniture dialog
+       * Wires up the input field to read/write the 'haEntityId' property
+       */
+      function initHAEntityField() {
+        console.log('🔧 Initializing HA Entity ID field integration...');
+        
+        // Poll for dialog opening (when furniture is double-clicked)
+        setInterval(() => {
+          setupHAEntityField();
+        }, 500);
+        
+        console.log('✅ HA Entity ID field initialization complete');
+        console.log('ℹ️  To use: Double-click furniture → Enter entity_id in "🏠 HA Entity ID" field');
+        console.log('ℹ️  Debug: Run setupHAEntityField() in console to manually check');
+        
+        // Expose for debugging
+        window.setupHAEntityField = setupHAEntityField;
+        window.getFurnitureController = getFurnitureController;
+        window.isSmartDeviceFurniture = isSmartDeviceFurniture;
+      }
+      
+      /**
+       * Setup the HA entity field when furniture dialog is shown
+       */
+      function setupHAEntityField() {
+        // Find the HA entity input field
+        const haEntityInput = document.querySelector('input[name="ha-entity-input"]');
+        const haEntityLabel = document.querySelector('[data-name="ha-entity-label"]');
+        const haEntityContainer = document.querySelector('[data-name="ha-entity-input-container"]');
+        
+        if (!haEntityInput || !haEntityLabel || !haEntityContainer) {
+          return; // Dialog not open yet
+        }
+        
+        // Get the controller (furniture being edited)
+        const controller = getFurnitureController();
+        if (!controller) {
+          // Hide field if no furniture
+          haEntityLabel.style.display = 'none';
+          haEntityContainer.style.display = 'none';
+          haEntityInput.dataset.initialized = 'false';
+          return;
+        }
+        
+        // Check if this is a smart device (ha_ prefix in catalog ID)
+        const catalogId = controller.getCatalogId ? controller.getCatalogId() : '';
+        const isSmartDevice = isSmartDeviceFurniture(controller);
+        
+        // Debug logging
+        if (haEntityInput.dataset.debugLogged !== 'true') {
+          console.log('🔍 Dialog detected:');
+          console.log('  - Catalog ID:', catalogId);
+          console.log('  - Is Smart Device:', isSmartDevice);
+          haEntityInput.dataset.debugLogged = 'true';
+        }
+        
+        if (!isSmartDevice) {
+          // Hide field for non-smart devices
+          haEntityLabel.style.display = 'none';
+          haEntityContainer.style.display = 'none';
+          haEntityInput.dataset.initialized = 'false';
+          haEntityInput.dataset.debugLogged = 'false'; // Reset for next dialog
+          return;
+        }
+        
+        // Check if already initialized
+        if (haEntityInput.dataset.initialized === 'true') {
+          return;
+        }
+        
+        console.log('🔧 Setting up HA Entity ID field for smart device...');
+        console.log('  - Showing field elements');
+        
+        // Show the field (only for smart devices) - remove display:none to use default grid layout
+        haEntityLabel.style.display = '';
+        haEntityContainer.style.display = '';
+        
+        console.log('  - Label display now:', haEntityLabel.style.display || 'default');
+        console.log('  - Container display now:', haEntityContainer.style.display || 'default');
+        
+        // Read current HA entity ID from furniture properties
+        const currentEntityId = getHAEntityId(controller);
+        haEntityInput.value = currentEntityId || '';
+        
+        console.log('📋 Current HA entity ID:', currentEntityId || '(none)');
+        
+        // Store the controller reference on the input element
+        haEntityInput.haController = controller;
+        
+        // Instead of saving on input, we'll save on dialog close
+        // Remove any existing blur listener first
+        if (!haEntityInput.hasBlurListener) {
+          haEntityInput.addEventListener('change', function() {
+            const newValue = haEntityInput.value.trim();
+            console.log('✏️ HA entity ID field changed to:', newValue || '(empty)');
+            // Save immediately on change
+            if (haEntityInput.haController) {
+              setHAEntityId(haEntityInput.haController, newValue);
+            }
+          });
+          haEntityInput.hasBlurListener = true;
+        }
+        
+        // Mark as initialized
+        haEntityInput.dataset.initialized = 'true';
+        
+        console.log('✅ HA Entity ID field setup complete');
+      }
+      
+      /**
+       * Check if furniture is a smart device (has ha_ prefix)
+       */
+      function isSmartDeviceFurniture(furniture) {
+        try {
+          if (!furniture) return false;
+          
+          // Check main catalog ID for ha_ prefix
+          const catalogId = furniture.getCatalogId ? furniture.getCatalogId() : '';
+          if (catalogId && catalogId.indexOf('ha_') === 0) {
+            return true;
+          }
+          
+          // Check properties.catalogId for ha_ prefix (for custom created devices)
+          try {
+            if (furniture.properties && furniture.properties.catalogId) {
+              const propsCatalogId = furniture.properties.catalogId;
+              if (propsCatalogId && propsCatalogId.indexOf('ha_') === 0) {
+                console.log('✅ Detected smart device from properties.catalogId:', propsCatalogId);
+                return true;
+              }
+            }
+          } catch (e) {
+            // Properties might not be accessible, continue
+          }
+          
+          // Check if creator is "HA" (Home Assistant created devices)
+          try {
+            if (furniture.creator && furniture.creator === 'HA') {
+              console.log('✅ Detected smart device from creator: HA');
+              return true;
+            }
+          } catch (e) {
+            // Creator might not be accessible, continue
+          }
+          
+          // Also check category name
+          if (typeof furniture.getCategory === 'function') {
+            const category = furniture.getCategory();
+            if (category) {
+              const categoryName = category.getName ? category.getName() : '';
+              if (categoryName && categoryName.toLowerCase().includes('smart')) {
+                return true;
+              }
+            }
+          }
+          
+          return false;
+        } catch (e) {
+          console.log('ℹ️ Could not determine if furniture is smart device:', e.message);
+          return false;
+        }
+      }
+      
+      /**
+       * Get the furniture controller from the current dialog
+       */
+      function getFurnitureController() {
+        try {
+          // Try to access the application's home and selected items
+          if (!window.application) return null;
+          
+          const homes = window.application.getHomes();
+          if (!homes || homes.length === 0) return null;
+          
+          const home = homes[0];
+          const selectedItems = home.getSelectedItems();
+          
+          if (!selectedItems || selectedItems.length === 0) return null;
+          
+          // Find the first furniture piece
+          for (let i = 0; i < selectedItems.length; i++) {
+            const item = selectedItems[i];
+            // Check if it's a piece of furniture (has getCatalogId method)
+            if (item && typeof item.getCatalogId === 'function') {
+              return item;
+            }
+          }
+          
+          return null;
+        } catch (e) {
+          console.error('Error getting furniture controller:', e);
+          return null;
+        }
+      }
+      
+      /**
+       * Get HA entity ID from furniture properties
+       */
+      function getHAEntityId(furniture) {
+        try {
+          if (!furniture || typeof furniture.getProperty !== 'function') {
+            console.log('⚠️ Cannot get HA entity ID - furniture missing or no getProperty method');
+            return null;
+          }
+          
+          // Try to get the property
+          const entityId = furniture.getProperty('haEntityId');
+          console.log('🔍 Retrieved HA entity ID from property:', entityId);
+          
+          // Also log all properties for debugging
+          if (typeof furniture.getPropertyNames === 'function') {
+            const propertyNames = furniture.getPropertyNames();
+            console.log('📝 All furniture properties:', propertyNames);
+          }
+          
+          return entityId;
+        } catch (e) {
+          console.log('ℹ️ No HA entity ID found on furniture:', e.message);
+          return null;
+        }
+      }
+      
+      /**
+       * Set HA entity ID on controller's additional properties
+       * This ensures it will be saved when the dialog OK button is clicked
+       */
+      function setHAEntityId(controller, entityId) {
+        try {
+          if (!controller) {
+            console.error('❌ No controller object to set entity ID on');
+            return;
+          }
+          
+          console.log('💾 Setting HA entity ID on controller:', entityId);
+          
+          // Get current additional properties
+          let additionalProps = controller.getAdditionalProperties();
+          console.log('📋 Current additional properties:', additionalProps);
+          
+          // Initialize if null
+          if (!additionalProps) {
+            additionalProps = { entries: [] };
+          }
+          
+          // Ensure entries array exists
+          if (!additionalProps.entries) {
+            additionalProps.entries = [];
+          }
+          
+          // Find or create the haEntityId entry
+          let found = false;
+          for (let i = 0; i < additionalProps.entries.length; i++) {
+            const entry = additionalProps.entries[i];
+            if (entry.key === 'haEntityId' || (entry.key && entry.key.getName && entry.key.getName() === 'haEntityId')) {
+              // Update existing entry
+              if (entityId && entityId.length > 0) {
+                entry.value = entityId;
+                console.log('✅ Updated existing HA entity ID entry:', entityId);
+              } else {
+                // Remove entry if empty
+                additionalProps.entries.splice(i, 1);
+                console.log('🗑️ Removed empty HA entity ID entry');
+              }
+              found = true;
+              break;
+            }
+          }
+          
+          // Add new entry if not found
+          if (!found && entityId && entityId.length > 0) {
+            additionalProps.entries.push({
+              key: 'haEntityId',
+              value: entityId,
+              getKey: function() { return this.key; },
+              getValue: function() { return this.value; }
+            });
+            console.log('✅ Added new HA entity ID entry:', entityId);
+          }
+          
+          // Update the controller's additional properties
+          controller.setAdditionalProperties(additionalProps.entries.length > 0 ? additionalProps : null);
+          console.log('� Saved to controller additional properties');
+          
+          // Verify
+          const verify = controller.getAdditionalProperties();
+          console.log('🔍 Verification - controller properties:', verify);
+        } catch (e) {
+          console.error('❌ Error setting HA entity ID:', e);
+        }
+      }
+      
       /**
      * Wait for application to be ready
      */
@@ -2061,14 +2366,32 @@ async function exportToOBJ() {
           const furniture = home.getFurniture();
           for (let i = 0; i < furniture.length; i++) {
             const piece = furniture[i];
-            data.furniture.push({
+            
+            // Get HA entity ID if present
+            let haEntityId = null;
+            try {
+              if (typeof piece.getProperty === 'function') {
+                haEntityId = piece.getProperty('haEntityId');
+              }
+            } catch (e) {
+              // Property doesn't exist, that's ok
+            }
+            
+            const furnitureData = {
               catalogId: piece.getCatalogId ? piece.getCatalogId() : '',
               name: piece.getName ? piece.getName() : '',
               x: piece.getX ? piece.getX() : 0,
               y: piece.getY ? piece.getY() : 0,
               elevation: piece.getElevation ? piece.getElevation() : 0,
               angle: piece.getAngle ? piece.getAngle() : 0
-            });
+            };
+            
+            // Add HA entity ID if present
+            if (haEntityId) {
+              furnitureData.haEntityId = haEntityId;
+            }
+            
+            data.furniture.push(furnitureData);
           }
         }
 
@@ -2125,8 +2448,9 @@ async function exportToOBJ() {
           for (let i = 0; i < furniture.length; i++) {
             const piece = furniture[i];
             const catalogId = piece.getCatalogId ? piece.getCatalogId() : '';
-            // Fix: Ensure catalogId is not null before calling indexOf
-            if (catalogId && catalogId.indexOf('ha_') === 0) {
+            
+            // Use same detection logic as UnityExportUtilities.isIoTDevice
+            if (UnityExportUtilities.isIoTDevice(catalogId, piece)) {
               count++;
             }
           }
