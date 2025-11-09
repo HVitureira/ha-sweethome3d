@@ -109,7 +109,17 @@ class UnityExportUtilities {
         
         // FILTER: Only add IoT devices to the export
         if (isDevice) {
-          devices.push({
+          // Get Home Assistant entity ID if present
+          let haEntityId = null;
+          try {
+            if (typeof piece.getProperty === 'function') {
+              haEntityId = piece.getProperty('ha_entity_id');
+            }
+          } catch (e) {
+            // Property doesn't exist, that's ok
+          }
+          
+          const deviceData = {
             id: `device_${deviceIndex}`,
             name: piece.getName ? piece.getName() : `Device ${deviceIndex}`,
             type: this.getDeviceType(catalogId, piece),
@@ -128,7 +138,15 @@ class UnityExportUtilities {
               height: (piece.getHeight ? piece.getHeight() : 0) * 0.01,
               depth: (piece.getDepth ? piece.getDepth() : 0) * 0.01
             }
-          });
+          };
+          
+          // Add Home Assistant entity ID if present
+          if (haEntityId && haEntityId.length > 0) {
+            deviceData.ha_entity_id = haEntityId;
+            console.log(`✅ Device "${deviceData.name}" has entity ID: ${haEntityId}`);
+          }
+          
+          devices.push(deviceData);
           deviceIndex++;
         }
       }
@@ -386,10 +404,17 @@ public class ${this.toPascalCase(baseName)}Importer : MonoBehaviour
         tracker.deviceId = device.id;
         tracker.deviceType = device.type;
         tracker.deviceName = device.name;
+        tracker.haEntityId = device.ha_entity_id;  // Home Assistant entity ID
         
         instantiatedDevices.Add(deviceObj);
         
-        Debug.Log($"Placed device: {device.name} at {deviceObj.transform.position}");
+        // Log with HA entity if present
+        string logMessage = $"Placed device: {device.name} at {deviceObj.transform.position}";
+        if (!string.IsNullOrEmpty(device.ha_entity_id))
+        {
+            logMessage += $" (HA Entity: {device.ha_entity_id})";
+        }
+        Debug.Log(logMessage);
     }
     
     GameObject GetDevicePrefab(string deviceType)
@@ -435,6 +460,7 @@ public class ${this.toPascalCase(baseName)}Importer : MonoBehaviour
         public Rotation rotation;
         public bool isIoTDevice;
         public Dimensions dimensions;
+        public string ha_entity_id;  // Home Assistant entity ID (optional)
     }
     
     [System.Serializable]
@@ -465,11 +491,15 @@ public class ${this.toPascalCase(baseName)}Importer : MonoBehaviour
 /// </summary>
 public class IoTDeviceTracker : MonoBehaviour
 {
+    [Header("Device Info")]
     public string deviceId;
     public string deviceType;
     public string deviceName;
     
-    // For MQTT integration
+    [Header("Home Assistant Integration")]
+    public string haEntityId;  // Home Assistant entity_id (e.g., "light.living_room")
+    
+    [Header("MQTT Integration")]
     public string mqttTopic;
     public object currentValue;
     
@@ -478,6 +508,31 @@ public class IoTDeviceTracker : MonoBehaviour
         mqttTopic = topic;
         // Parse payload based on device type
         // Update visualization
+    }
+    
+    /// <summary>
+    /// Check if this device has a Home Assistant entity configured
+    /// </summary>
+    public bool HasHomeAssistantEntity()
+    {
+        return !string.IsNullOrEmpty(haEntityId);
+    }
+    
+    /// <summary>
+    /// Get the MQTT topic for this device based on HA entity ID
+    /// Example: light.living_room -> homeassistant/light/living_room/state
+    /// </summary>
+    public string GetHomeAssistantTopic()
+    {
+        if (!HasHomeAssistantEntity()) return null;
+        
+        string[] parts = haEntityId.Split('.');
+        if (parts.Length != 2) return null;
+        
+        string domain = parts[0];
+        string entity = parts[1];
+        
+        return $"homeassistant/{domain}/{entity}/state";
     }
 }
 `;
