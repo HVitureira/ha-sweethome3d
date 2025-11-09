@@ -1883,7 +1883,7 @@
       }
       /**
        * Initialize HA Entity ID field in furniture dialog
-       * Wires up the input field to read/write the 'ha_entity_id' property
+       * Wires up the input field to read/write the 'haEntityId' property
        */
       function initHAEntityField() {
         console.log('🔧 Initializing HA Entity ID field integration...');
@@ -2088,7 +2088,7 @@
           }
           
           // Try to get the property
-          const entityId = furniture.getProperty('ha_entity_id');
+          const entityId = furniture.getProperty('haEntityId');
           console.log('🔍 Retrieved HA entity ID from property:', entityId);
           
           // Also log all properties for debugging
@@ -2131,11 +2131,11 @@
             additionalProps.entries = [];
           }
           
-          // Find or create the ha_entity_id entry
+          // Find or create the haEntityId entry
           let found = false;
           for (let i = 0; i < additionalProps.entries.length; i++) {
             const entry = additionalProps.entries[i];
-            if (entry.key === 'ha_entity_id' || (entry.key && entry.key.getName && entry.key.getName() === 'ha_entity_id')) {
+            if (entry.key === 'haEntityId' || (entry.key && entry.key.getName && entry.key.getName() === 'haEntityId')) {
               // Update existing entry
               if (entityId && entityId.length > 0) {
                 entry.value = entityId;
@@ -2153,7 +2153,7 @@
           // Add new entry if not found
           if (!found && entityId && entityId.length > 0) {
             additionalProps.entries.push({
-              key: 'ha_entity_id',
+              key: 'haEntityId',
               value: entityId,
               getKey: function() { return this.key; },
               getValue: function() { return this.value; }
@@ -2371,7 +2371,7 @@ async function exportToOBJ() {
             let haEntityId = null;
             try {
               if (typeof piece.getProperty === 'function') {
-                haEntityId = piece.getProperty('ha_entity_id');
+                haEntityId = piece.getProperty('haEntityId');
               }
             } catch (e) {
               // Property doesn't exist, that's ok
@@ -2388,7 +2388,7 @@ async function exportToOBJ() {
             
             // Add HA entity ID if present
             if (haEntityId) {
-              furnitureData.ha_entity_id = haEntityId;
+              furnitureData.haEntityId = haEntityId;
             }
             
             data.furniture.push(furnitureData);
@@ -2448,8 +2448,9 @@ async function exportToOBJ() {
           for (let i = 0; i < furniture.length; i++) {
             const piece = furniture[i];
             const catalogId = piece.getCatalogId ? piece.getCatalogId() : '';
-            // Fix: Ensure catalogId is not null before calling indexOf
-            if (catalogId && catalogId.indexOf('ha_') === 0) {
+            
+            // Use same detection logic as UnityExportUtilities.isIoTDevice
+            if (UnityExportUtilities.isIoTDevice(catalogId, piece)) {
               count++;
             }
           }

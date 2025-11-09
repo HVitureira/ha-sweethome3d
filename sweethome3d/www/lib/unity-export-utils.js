@@ -113,7 +113,7 @@ class UnityExportUtilities {
           let haEntityId = null;
           try {
             if (typeof piece.getProperty === 'function') {
-              haEntityId = piece.getProperty('ha_entity_id');
+              haEntityId = piece.getProperty('haEntityId');
             }
           } catch (e) {
             // Property doesn't exist, that's ok
@@ -142,7 +142,7 @@ class UnityExportUtilities {
           
           // Add Home Assistant entity ID if present
           if (haEntityId && haEntityId.length > 0) {
-            deviceData.ha_entity_id = haEntityId;
+            deviceData.haEntityId = haEntityId;
             console.log(`✅ Device "${deviceData.name}" has entity ID: ${haEntityId}`);
           }
           
@@ -404,15 +404,15 @@ public class ${this.toPascalCase(baseName)}Importer : MonoBehaviour
         tracker.deviceId = device.id;
         tracker.deviceType = device.type;
         tracker.deviceName = device.name;
-        tracker.haEntityId = device.ha_entity_id;  // Home Assistant entity ID
+        tracker.haEntityId = device.haEntityId;  // Home Assistant entity ID
         
         instantiatedDevices.Add(deviceObj);
         
         // Log with HA entity if present
         string logMessage = $"Placed device: {device.name} at {deviceObj.transform.position}";
-        if (!string.IsNullOrEmpty(device.ha_entity_id))
+        if (!string.IsNullOrEmpty(device.haEntityId))
         {
-            logMessage += $" (HA Entity: {device.ha_entity_id})";
+            logMessage += $" (HA Entity: {device.haEntityId})";
         }
         Debug.Log(logMessage);
     }
@@ -460,7 +460,7 @@ public class ${this.toPascalCase(baseName)}Importer : MonoBehaviour
         public Rotation rotation;
         public bool isIoTDevice;
         public Dimensions dimensions;
-        public string ha_entity_id;  // Home Assistant entity ID (optional)
+        public string haEntityId;  // Home Assistant entity ID (optional)
     }
     
     [System.Serializable]
