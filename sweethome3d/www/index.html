@@ -45,7 +45,8 @@
 <script type="text/javascript" src="lib/objExporter.js?v=2.5"></script>
 <script type="text/javascript" src="lib/obj-exporter-integration.js"></script>
 <script type="text/javascript" src="lib/unity-export-utils.js"></script>
-
+<!-- TODO: CHECK LATER - Canvas 2D renderer not working, commented out for now -->
+<!-- <script src="lib/effect-radius-renderer.js"></script> -->
 
   <link rel="stylesheet" type="text/css" href="lib/sweethome3djs.css">
   <style type="text/css">
@@ -544,6 +545,27 @@
             pattern="[a-z_]+\.[a-z0-9_]+" title="Format: domain.entity_name (e.g., sensor.living_room_temperature)" />
           <div style="font-size: 0.85em; color: #666; margin-top: 0.3em;">
             Enter the Home Assistant entity_id for this smart device
+          </div>
+        </div>
+
+        <div data-name="ha-effect-radius-container" style="display:none; margin-top: 15px;">
+          <div style="color: #666; font-size: 12px; margin-bottom: 5px; font-weight: 500;">
+            📡 Effect Radius
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <input 
+              data-name="ha-effect-radius-slider" 
+              type="range" 
+              min="0.5" 
+              max="15" 
+              step="0.5" 
+              value="3.0"
+              style="flex: 1; cursor: pointer; height: 6px;"
+            />
+            <span 
+              data-name="ha-effect-radius-value" 
+              style="min-width: 50px; text-align: right; font-family: monospace; font-weight: bold; color: #0066cc;"
+            >3.0m</span>
           </div>
         </div>
 
@@ -1718,6 +1740,112 @@
           checkHADevicesLoaded();
         }, 2000); // Increased delay to 2 seconds
       }
+
+      
+      // TODO: CHECK LATER - Canvas 2D effect radius renderer not working, commented out for now
+      /*
+      document.addEventListener('DOMContentLoaded', function() {
+        // Wait for SweetHome3D to fully initialize
+        const initEffectRenderer = () => {
+          if (!window.application || !window.application.getHomes) {
+            console.log('⏳ Waiting for application...');
+            setTimeout(initEffectRenderer, 500);
+            return;
+          }
+          
+          const homes = window.application.getHomes();
+          if (!homes || homes.length === 0) {
+            console.log('⏳ Waiting for home to be created...');
+            setTimeout(initEffectRenderer, 500);
+            return;
+          }
+          
+          console.log('🎨 Initializing Effect Radius Renderer');
+          
+          // Create renderer instance
+          window.effectRadiusRenderer = new EffectRadiusRenderer();
+          window.effectRadiusRenderer.initialize(window.application);
+          
+          // Auto-detect existing IoT devices
+          const home = homes[0];
+          if (home) {
+            const count = window.effectRadiusRenderer.autoDetectDevices(home);
+            
+            // Add a test device if none found
+            if (count === 0) {
+              console.log('⚠️ No IoT devices found. Adding test devices...');
+              const furniture = home.getFurniture();
+              if (furniture && furniture.length > 0) {
+                // Add different propagation types for demo
+                const TYPES = window.effectRadiusRenderer.PROPAGATION_TYPES;
+                
+                if (furniture[0]) {
+                  window.effectRadiusRenderer.addDevice(
+                    furniture[0], 5.0, 'rgba(255, 0, 0, 0.5)', 
+                    TYPES.ROOM_FILL
+                  );
+                  console.log('✓ Test device 1: ROOM_FILL (temperature-like)');
+                }
+                
+                if (furniture[1]) {
+                  window.effectRadiusRenderer.addDevice(
+                    furniture[1], 4.0, 'rgba(0, 255, 0, 0.5)', 
+                    TYPES.CIRCULAR
+                  );
+                  console.log('✓ Test device 2: CIRCULAR (motion sensor-like)');
+                }
+                
+                if (furniture[2]) {
+                  window.effectRadiusRenderer.addDevice(
+                    furniture[2], 3.0, 'rgba(0, 0, 255, 0.5)', 
+                    TYPES.SQUARE
+                  );
+                  console.log('✓ Test device 3: SQUARE (grid-based)');
+                }
+              }
+            }
+          }
+          
+          // Debug status after 2 seconds
+          setTimeout(() => {
+            if (window.effectRadiusRenderer) {
+              window.effectRadiusRenderer.debugStatus();
+            }
+          }, 2000);
+          
+          console.log('✅ Effect Radius Renderer ready');
+          console.log('💡 Use window.effectRadiusRenderer.debugStatus() to check status');
+          
+          // Add toggle button to toolbar (optional)
+          addEffectRadiusToggle();
+        };
+        
+        initEffectRenderer();
+      });
+
+      /**
+       * Add toggle button to show/hide effect radii
+       */
+      function addEffectRadiusToggle() {
+        const toolbar = document.querySelector('.toolbar');
+        if (!toolbar) return;
+        
+        const button = document.createElement('button');
+        button.textContent = '📡 Effect Radii';
+        button.className = 'toolbar-button';
+        button.style.marginLeft = '10px';
+        button.title = 'Toggle IoT device effect radii visualization';
+        
+        let enabled = true;
+        button.onclick = () => {
+          enabled = !enabled;
+          window.effectRadiusRenderer.setEnabled(enabled);
+          button.style.opacity = enabled ? '1.0' : '0.5';
+        };
+        
+        toolbar.appendChild(button);
+      }
+      
 
           /**
      * Add floating export buttons to the interface

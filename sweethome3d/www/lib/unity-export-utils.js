@@ -146,6 +146,16 @@ class UnityExportUtilities {
             console.log(`✅ Device "${deviceData.name}" has entity ID: ${haEntityId}`);
           }
           
+          // Add effect radius and propagation area for Unity particle systems
+          const effectData = this.extractEffectPropagation(piece, home);
+          if (effectData) {
+            deviceData.effectRadius = effectData.radius;
+            deviceData.propagationType = effectData.type;
+            deviceData.affectedArea = effectData.area;
+            // Note: particleSettings removed - Unity should configure rendering based on device type
+            console.log(`📡 Device "${deviceData.name}" has effect: ${effectData.type}, radius: ${effectData.radius}m`);
+          }
+          
           devices.push(deviceData);
           deviceIndex++;
         }
@@ -241,6 +251,353 @@ class UnityExportUtilities {
     }
     
     return false;
+  }
+  
+  /**
+   * Extract effect propagation data for Unity particle systems
+   * This calculates the affected area based on physical propagation (walls, rooms)
+   */
+  static extractEffectPropagation(piece, home) {
+    const deviceType = this.getDeviceType(
+      piece.getCatalogId ? piece.getCatalogId() : '',
+      piece
+    );
+    
+    // Get device position
+    const x = piece.getX ? piece.getX() : 0;
+    const y = piece.getY ? piece.getY() : 0;
+    const elevation = piece.getElevation ? piece.getElevation() : 0;
+    
+    // Determine default radius and propagation type based on device
+    let radius = 5.0; // Default 5 meters
+    let propagationType = 'room_fill'; // Default to wall-constrained
+    let particleType = 'environmental'; // Default particle type
+    
+    // Custom settings per device type
+    switch (deviceType) {
+      case 'temperature_sensor':
+        radius = 5.0;
+        propagationType = 'room_fill';
+        particleType = 'heat';
+        break;
+      case 'humidity_sensor':
+        radius = 5.0;
+        propagationType = 'room_fill';
+        particleType = 'moisture';
+        break;
+      case 'light_sensor':
+      case 'light':
+        radius = 6.0;
+        propagationType = 'room_fill';
+        particleType = 'light';
+        break;
+      case 'motion_sensor':
+        radius = 4.0;
+        propagationType = 'circular';
+        particleType = 'detection_wave';
+        break;
+      case 'camera':
+        radius = 8.0;
+        propagationType = 'directional';
+        particleType = 'vision_cone';
+        break;
+      case 'speaker':
+        radius = 6.0;
+        propagationType = 'circular';
+        particleType = 'sound_wave';
+        break;
+      default:
+        radius = 3.0;
+        propagationType = 'circular';
+        particleType = 'generic';
+    }
+    
+    // Try to get custom radius from furniture properties
+    try {
+      const storedRadius = piece.getProperty('haEffectRadius');
+      if (storedRadius && !isNaN(parseFloat(storedRadius))) {
+        radius = parseFloat(storedRadius);
+      }
+    } catch (e) {
+      // Property doesn't exist
+    }
+    
+    // Calculate affected area based on propagation type
+    const affectedArea = this.calculateAffectedArea(
+      x, y, radius, propagationType, home
+    );
+    
+    return {
+      radius: radius,
+      type: propagationType,
+      area: affectedArea
+    };
+  }
+  
+  /**
+   * Calculate affected area for particle spawning in Unity
+   */
+  static calculateAffectedArea(x, y, maxRadius, propagationType, home) {
+    const radiusCm = maxRadius * 100; // Convert meters to cm
+    
+    switch (propagationType) {
+      case 'room_fill':
+        return this.calculateRoomFilledArea(x, y, radiusCm, home);
+      
+      case 'circular':
+        return this.calculateCircularArea(x, y, radiusCm);
+      
+      case 'square':
+        return this.calculateSquareArea(x, y, radiusCm);
+      
+      case 'directional':
+        return this.calculateDirectionalArea(x, y, radiusCm, home);
+      
+      default:
+        return this.calculateCircularArea(x, y, radiusCm);
+    }
+  }
+  
+  /**
+   * Calculate room-filled area (wall-constrained)
+   * Returns polygon vertices in Unity coordinates (meters)
+   */
+  static calculateRoomFilledArea(x, y, maxRadius, home) {
+    // Find room containing device
+    const room = this.findRoomContaining(x, y, home);
+    
+    if (room && room.getPoints) {
+      const points = room.getPoints();
+      // Convert to Unity coordinates (cm to meters, flip Y/Z)
+      return {
+        type: 'polygon',
+        vertices: points.map(p => ({
+          x: p[0] * 0.01,
+          y: 0.0, // Floor level
+          z: p[1] * 0.01
+        })),
+        volume: true, // Fill entire room volume
+        boundedByWalls: true
+      };
+    }
+    
+    // Fallback: Use flood fill with wall detection
+    const samplePoints = this.sampleWallConstrainedPoints(x, y, maxRadius, home);
+    
+    return {
+      type: 'point_cloud',
+      points: samplePoints.map(p => ({
+        x: p[0] * 0.01,
+        y: 0.0,
+        z: p[1] * 0.01
+      })),
+      volume: true,
+      boundedByWalls: true
+    };
+  }
+  
+  /**
+   * Calculate circular area (omnidirectional)
+   */
+  static calculateCircularArea(x, y, radius) {
+    return {
+      type: 'sphere',
+      center: {
+        x: x * 0.01,
+        y: 0.0,
+        z: y * 0.01
+      },
+      radius: radius * 0.01,
+      volume: true,
+      boundedByWalls: false
+    };
+  }
+  
+  /**
+   * Calculate square area
+   */
+  static calculateSquareArea(x, y, radius) {
+    const r = radius * 0.01;
+    const cx = x * 0.01;
+    const cz = y * 0.01;
+    
+    return {
+      type: 'box',
+      center: { x: cx, y: 0.0, z: cz },
+      size: { x: r * 2, y: r * 2, z: r * 2 },
+      volume: true,
+      boundedByWalls: false
+    };
+  }
+  
+  /**
+   * Calculate directional area (cone)
+   */
+  static calculateDirectionalArea(x, y, radius, home) {
+    // Cone with 60 degree FOV
+    return {
+      type: 'cone',
+      origin: {
+        x: x * 0.01,
+        y: 0.0,
+        z: y * 0.01
+      },
+      direction: { x: 0, y: 0, z: 1 }, // Forward
+      angle: 60, // degrees
+      range: radius * 0.01,
+      volume: true,
+      boundedByWalls: false
+    };
+  }
+  
+  /**
+   * Find room containing a point
+   */
+  static findRoomContaining(x, y, home) {
+    if (!home || !home.getRooms) return null;
+    
+    const rooms = home.getRooms();
+    for (let i = 0; i < rooms.length; i++) {
+      const room = rooms[i];
+      if (this.isPointInRoom(x, y, room)) {
+        return room;
+      }
+    }
+    return null;
+  }
+  
+  /**
+   * Point-in-polygon test
+   */
+  static isPointInRoom(x, y, room) {
+    const points = room.getPoints ? room.getPoints() : [];
+    if (points.length < 3) return false;
+    
+    let inside = false;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+      const xi = points[i][0], yi = points[i][1];
+      const xj = points[j][0], yj = points[j][1];
+      
+      const intersect = ((yi > y) !== (yj > y)) &&
+                       (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+  
+  /**
+   * Sample points constrained by walls (flood fill)
+   */
+  static sampleWallConstrainedPoints(x, y, maxRadius, home) {
+    const points = [];
+    const step = 50; // 50cm sampling
+    const walls = home.getWalls ? home.getWalls() : [];
+    
+    for (let px = x - maxRadius; px <= x + maxRadius; px += step) {
+      for (let py = y - maxRadius; py <= y + maxRadius; py += step) {
+        const dist = Math.sqrt((px - x) ** 2 + (py - y) ** 2);
+        
+        if (dist <= maxRadius) {
+          // Check if path crosses walls
+          if (!this.pathCrossesWalls(x, y, px, py, walls)) {
+            points.push([px, py]);
+          }
+        }
+      }
+    }
+    
+    return points;
+  }
+  
+  /**
+   * Check if line segment crosses any walls
+   */
+  static pathCrossesWalls(x1, y1, x2, y2, walls) {
+    for (let i = 0; i < walls.length; i++) {
+      const wall = walls[i];
+      const wx1 = wall.getXStart ? wall.getXStart() : 0;
+      const wy1 = wall.getYStart ? wall.getYStart() : 0;
+      const wx2 = wall.getXEnd ? wall.getXEnd() : 0;
+      const wy2 = wall.getYEnd ? wall.getYEnd() : 0;
+      
+      if (this.lineSegmentsIntersect(x1, y1, x2, y2, wx1, wy1, wx2, wy2)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  
+  /**
+   * Line segment intersection test
+   */
+  static lineSegmentsIntersect(x1, y1, x2, y2, x3, y3, x4, y4) {
+    const denominator = ((y4 - y3) * (x2 - x1)) - ((x4 - x3) * (y2 - y1));
+    if (denominator === 0) return false;
+    
+    const ua = (((x4 - x3) * (y1 - y3)) - ((y4 - y3) * (x1 - x3))) / denominator;
+    const ub = (((x2 - x1) * (y1 - y3)) - ((y2 - y1) * (x1 - x3))) / denominator;
+    
+    return (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1);
+  }
+  
+  /**
+   * Get Unity particle system settings based on device type
+   */
+  static getParticleSettings(deviceType, particleType) {
+    const settings = {
+      particleType: particleType,
+      emissionRate: 10,
+      particleLifetime: 2.0,
+      startSpeed: 0.5,
+      startSize: 0.1,
+      color: { r: 1, g: 1, b: 1, a: 0.5 },
+      simulationSpace: 'World',
+      maxParticles: 1000
+    };
+    
+    // Customize per device type
+    switch (deviceType) {
+      case 'temperature_sensor':
+        settings.color = { r: 1.0, g: 0.3, b: 0.1, a: 0.4 }; // Orange/red
+        settings.emissionRate = 20;
+        settings.startSpeed = 0.3;
+        settings.startSize = 0.15;
+        settings.particleLifetime = 3.0;
+        break;
+        
+      case 'humidity_sensor':
+        settings.color = { r: 0.3, g: 0.6, b: 1.0, a: 0.3 }; // Blue
+        settings.emissionRate = 15;
+        settings.startSpeed = 0.2;
+        settings.startSize = 0.08;
+        break;
+        
+      case 'light_sensor':
+      case 'light':
+        settings.color = { r: 1.0, g: 1.0, b: 0.8, a: 0.6 }; // Warm white
+        settings.emissionRate = 50;
+        settings.startSpeed = 1.0;
+        settings.startSize = 0.05;
+        settings.particleLifetime = 1.5;
+        break;
+        
+      case 'motion_sensor':
+        settings.color = { r: 0.2, g: 1.0, b: 0.3, a: 0.5 }; // Green
+        settings.emissionRate = 5;
+        settings.startSpeed = 2.0;
+        settings.startSize = 0.2;
+        settings.particleLifetime = 1.0;
+        break;
+        
+      case 'camera':
+        settings.color = { r: 0.0, g: 0.5, b: 1.0, a: 0.4 }; // Blue
+        settings.emissionRate = 30;
+        settings.startSpeed = 1.5;
+        settings.startSize = 0.03;
+        break;
+    }
+    
+    return settings;
   }
   
   /**
