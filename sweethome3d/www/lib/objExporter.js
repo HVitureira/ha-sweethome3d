@@ -24,6 +24,18 @@ class OBJExporter {
     this.normalIndex = 1;
     this.texCoordIndex = 1;
     this.precision = 7; // Decimal places for coordinates
+
+    // Initialize default materials if available
+    this.defaultMaterials = new Map();
+    if (typeof DEFAULT_MTL_CONTENT !== 'undefined') {
+        try {
+            // Re-use parseMTLTextures logic but with empty texture map
+            this.defaultMaterials = this.parseMTLTextures(DEFAULT_MTL_CONTENT, new Map());
+            // console.log(`Loaded ${this.defaultMaterials.size} default materials.`);
+        } catch (e) {
+            console.warn("Failed to parse default materials:", e);
+        }
+    }
   }
 
   /**
@@ -86,7 +98,7 @@ class OBJExporter {
         materials: this.materials.size,
         textures: this.textures.size
       };
-      
+
       console.log('✅ OBJ Export completed:', result);
       return result;
       
@@ -210,25 +222,54 @@ class OBJExporter {
     const v6 = [xEnd + nx * thickness / 2, 0, yEnd + ny * thickness / 2];
     const v7 = [xEnd + nx * thickness / 2, height, yEnd + ny * thickness / 2];
     const v8 = [xStart + nx * thickness / 2, height, yStart + ny * thickness / 2];
-    
-    // Get or create material for wall
-    const materialName = this.getWallMaterial(wall);
-    
+
+    // Extract wall index from name (e.g., 'wall_5' -> 5)
+    const wallIndex = parseInt(name.split('_')[1]) || 0;
+
+    // Get materials for both sides of the wall
+    const leftMaterialName = await this.getWallMaterial(wall, wallIndex);
+    const rightMaterialName = await this.getWallRightSideMaterial(wall, wallIndex);
+
     this.addComment(`Wall: ${name}`);
-    this.setMaterial(materialName);
-    
-    // Front face
-    this.addQuad(v1, v2, v3, v4, [0, 0, -1]);
-    
-    // Back face
-    this.addQuad(v6, v5, v8, v7, [0, 0, 1]);
-    
-    // Top face
-    this.addQuad(v4, v3, v7, v8, [0, 1, 0]);
-    
-    // Side faces
-    this.addQuad(v5, v1, v4, v8, [-nx, 0, -ny]);
-    this.addQuad(v2, v6, v7, v3, [nx, 0, ny]);
+
+    // Get material info for both sides
+    const leftMaterial = this.materials.get(leftMaterialName);
+    const rightMaterial = this.materials.get(rightMaterialName);
+    const hasLeftTexture = leftMaterial && leftMaterial.texture;
+    const hasRightTexture = rightMaterial && rightMaterial.texture;
+
+    // Front face (left side material) - faces negative normal direction
+    this.setMaterial(leftMaterialName);
+    if (hasLeftTexture) {
+      this.addQuadWithTexture(v1, v2, v3, v4, [0, 0, -1], leftMaterial.textureTransform);
+    } else {
+      this.addQuad(v1, v2, v3, v4, [0, 0, -1]);
+    }
+
+    // Back face (right side material) - faces positive normal direction
+    this.setMaterial(rightMaterialName);
+    if (hasRightTexture) {
+      this.addQuadWithTexture(v6, v5, v8, v7, [0, 0, 1], rightMaterial.textureTransform);
+    } else {
+      this.addQuad(v6, v5, v8, v7, [0, 0, 1]);
+    }
+
+    // Top face - use left side material as default
+    this.setMaterial(leftMaterialName);
+    if (hasLeftTexture) {
+      this.addQuadWithTexture(v4, v3, v7, v8, [0, 1, 0], leftMaterial.textureTransform);
+    } else {
+      this.addQuad(v4, v3, v7, v8, [0, 1, 0]);
+    }
+
+    // Side faces (ends of wall) - use left side material
+    if (hasLeftTexture) {
+      this.addQuadWithTexture(v5, v1, v4, v8, [-nx, 0, -ny], leftMaterial.textureTransform);
+      this.addQuadWithTexture(v2, v6, v7, v3, [nx, 0, ny], leftMaterial.textureTransform);
+    } else {
+      this.addQuad(v5, v1, v4, v8, [-nx, 0, -ny]);
+      this.addQuad(v2, v6, v7, v3, [nx, 0, ny]);
+    }
   }
 
   /**
@@ -238,35 +279,52 @@ class OBJExporter {
     if (!room) {
       return;
     }
-    
+
     const points = room.getPoints ? room.getPoints() : [];
     if (points.length < 3) {
       return;
     }
-    
+
     const floorLevel = 0;
     const ceilingHeight = 250; // Default ceiling height
-    
+
+    // Extract room index from name (e.g., 'room_5' -> 5)
+    const roomIndex = parseInt(name.split('_')[1]) || 0;
+
     this.addComment(`Room: ${name} - ${room.getName ? room.getName() : 'Unnamed'}`);
-    
-    // Floor material
-    const floorMaterial = this.getRoomFloorMaterial(room);
+
+    // Floor with texture support
+    const floorMaterial = await this.getRoomFloorMaterialWithTexture(room, roomIndex);
     this.setMaterial(floorMaterial);
-    
+
+    const floorMat = this.materials.get(floorMaterial);
+    const hasFloorTexture = floorMat && floorMat.texture;
+
     // Triangulate floor polygon
     const floorTriangles = this.triangulatePolygon(points, floorLevel, true);
     for (const tri of floorTriangles) {
-      this.addTriangle(tri[0], tri[1], tri[2], [0, -1, 0]);
+      if (hasFloorTexture) {
+        this.addTriangleWithTexture(tri[0], tri[1], tri[2], [0, -1, 0], floorMat.textureTransform);
+      } else {
+        this.addTriangle(tri[0], tri[1], tri[2], [0, -1, 0]);
+      }
     }
-    
-    // Ceiling material
-    const ceilingMaterial = this.getRoomCeilingMaterial(room);
+
+    // Ceiling with texture support
+    const ceilingMaterial = await this.getRoomCeilingMaterialWithTexture(room, roomIndex);
     this.setMaterial(ceilingMaterial);
-    
+
+    const ceilingMat = this.materials.get(ceilingMaterial);
+    const hasCeilingTexture = ceilingMat && ceilingMat.texture;
+
     // Triangulate ceiling polygon
     const ceilingTriangles = this.triangulatePolygon(points, ceilingHeight, false);
     for (const tri of ceilingTriangles) {
-      this.addTriangle(tri[0], tri[1], tri[2], [0, 1, 0]);
+      if (hasCeilingTexture) {
+        this.addTriangleWithTexture(tri[0], tri[1], tri[2], [0, 1, 0], ceilingMat.textureTransform);
+      } else {
+        this.addTriangle(tri[0], tri[1], tri[2], [0, 1, 0]);
+      }
     }
   }
 
@@ -355,39 +413,85 @@ class OBJExporter {
    */
   async exportModelFromURL(modelURL, x, y, elevation, angle, name, piece) {
     // Uncomment to debug model loading: console.log(`    📥 Loading model from: ${modelURL}`);
-    
+
     return new Promise((resolve, reject) => {
       // Use SweetHome3D's ZIPTools to load the ZIP file (same as ModelLoader)
       ZIPTools.getZIP(modelURL, false, {
         zipReady: async (zip) => {
           try {
-            // Find OBJ file in the ZIP (same approach as ModelLoader)
+            // Find OBJ, MTL, and texture files in the ZIP
             let objFile = null;
             let objFileName = null;
-            
+            let mtlFile = null;
+            const textureFiles = [];
+
             const files = zip.file(/.*/);
             for (let i = 0; i < files.length; i++) {
               const file = files[i];
-              if (file.name.toLowerCase().endsWith('.obj')) {
+              const fileName = file.name.toLowerCase();
+
+              if (fileName.endsWith('.obj')) {
                 objFile = file;
                 objFileName = file.name;
-                break;
+              } else if (fileName.endsWith('.mtl')) {
+                mtlFile = file;
+              } else if (fileName.match(/\.(jpg|jpeg|png|bmp|gif)$/)) {
+                textureFiles.push(file);
               }
             }
-            
+
             if (!objFile) {
               reject(new Error('No OBJ file found in model ZIP'));
               return;
             }
+
+            // Prefer MTL file validation (look for one matching the OBJ name)
+            const expectedMtlName = objFileName.replace(/\.obj$/i, '.mtl');
+            let selectedMtlFile = mtlFile; // Default to last found
             
-            // Uncomment to see which OBJ files are loaded: console.log(`    📄 Found OBJ file: ${objFileName}`);
-            
+            // Try to find exact match
+            const files2 = zip.file(/.*/);
+            for (let i = 0; i < files2.length; i++) {
+               if (files2[i].name.toLowerCase().endsWith(expectedMtlName.toLowerCase()) || 
+                   files2[i].name.toLowerCase() === expectedMtlName.toLowerCase()) {
+                 selectedMtlFile = files2[i];
+                 break;
+               }
+            }
+
+            // Uncomment to see which OBJ files are loaded: 
+            // console.log(`    📄 Found OBJ file: ${objFileName}`);
+            // if (selectedMtlFile) console.log(`    📄 Found MTL file: ${selectedMtlFile.name}`); (uncommented below)
+
+            // Extract textures from ZIP
+            const textureMap = new Map(); // originalFileName -> exportedTextureName
+            for (const texFile of textureFiles) {
+              try {
+                const texData = await texFile.async('arraybuffer');
+                const texBaseName = `furniture_${name}_${texFile.name.split('.')[0]}`;
+                const texName = await this.addTexture(texBaseName, texFile.name, texData);
+                textureMap.set(texFile.name, texName);
+              } catch (error) {
+                console.warn(`⚠️ Failed to extract texture ${texFile.name}:`, error.message);
+              }
+            }
+
+            // Parse MTL file to map materials to textures
+            let materialTextureMap = new Map();
+            if (selectedMtlFile) {
+              const mtlContent = selectedMtlFile.asText();
+              materialTextureMap = this.parseMTLTextures(mtlContent, textureMap);
+              // console.log(`    🎨 Parsed ${materialTextureMap.size} materials from MTL`);
+            } else {
+              console.warn(`    ⚠️ No MTL file found for ${objFileName}, materials will be generic`);
+            }
+
             // Read OBJ content
             const objContent = objFile.asText();
-            
-            // Parse and integrate the OBJ file
-            await this.integrateOBJContent(objContent, x, y, elevation, angle, name, piece);
-            
+
+            // Parse and integrate the OBJ file with texture mapping
+            await this.integrateOBJContent(objContent, x, y, elevation, angle, name, piece, materialTextureMap);
+
             resolve();
           } catch (error) {
             reject(error);
@@ -401,9 +505,104 @@ class OBJExporter {
   }
 
   /**
+   * Parse MTL file to extract texture references and material colors
+   * @param {string} mtlContent - MTL file content
+   * @param {Map} textureMap - Map of original texture names to exported names
+   * @returns {Map} - Map of material names to material data {texture, diffuse, ambient, specular, shininess}
+   */
+  parseMTLTextures(mtlContent, textureMap) {
+    const materialDataMap = new Map();
+    const lines = mtlContent.split('\n');
+    let currentMaterial = null;
+    let currentData = null;
+
+    // Create case-insensitive texture lookup
+    const textureMapLower = new Map();
+    for (const [key, value] of textureMap) {
+      textureMapLower.set(key.toLowerCase(), value);
+    }
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      if (trimmed.startsWith('newmtl ')) {
+        // Save previous material data
+        if (currentMaterial && currentData) {
+          materialDataMap.set(currentMaterial, currentData);
+        }
+        currentMaterial = trimmed.substring(7).trim();
+        currentData = {
+          texture: null,
+          diffuse: [0.8, 0.8, 0.8],  // Default gray
+          ambient: [0.2, 0.2, 0.2],
+          specular: [0.0, 0.0, 0.0],
+          shininess: 30
+        };
+      } else if (currentMaterial && currentData) {
+        const parseVal = (val, def) => {
+            const parsed = parseFloat(val);
+            return isNaN(parsed) ? def : parsed;
+          };
+
+          if (trimmed.startsWith('map_Kd ')) {
+            const texturePath = trimmed.substring(7).trim();
+            // Get filename and handle both forward and back slashes
+            const textureFileName = texturePath.split(/[/\\]/).pop();
+
+            // Case-insensitive texture lookup
+            const lowerFileName = textureFileName.toLowerCase();
+            if (textureMapLower.has(lowerFileName)) {
+              currentData.texture = textureMapLower.get(lowerFileName);
+            }
+          } else if (trimmed.startsWith('Kd ')) {
+            // Parse diffuse color: Kd r g b
+            const parts = trimmed.substring(3).trim().split(/\s+/);
+            if (parts.length >= 3) {
+              currentData.diffuse = [
+                parseVal(parts[0], 0.8),
+                parseVal(parts[1], 0.8),
+                parseVal(parts[2], 0.8)
+              ];
+            }
+          } else if (trimmed.startsWith('Ka ')) {
+            // Parse ambient color: Ka r g b
+            const parts = trimmed.substring(3).trim().split(/\s+/);
+            if (parts.length >= 3) {
+              currentData.ambient = [
+                parseVal(parts[0], 0.2),
+                parseVal(parts[1], 0.2),
+                parseVal(parts[2], 0.2)
+              ];
+            }
+          } else if (trimmed.startsWith('Ks ')) {
+            // Parse specular color: Ks r g b
+            const parts = trimmed.substring(3).trim().split(/\s+/);
+            if (parts.length >= 3) {
+              currentData.specular = [
+                parseVal(parts[0], 0.0),
+                parseVal(parts[1], 0.0),
+                parseVal(parts[2], 0.0)
+              ];
+            }
+          } else if (trimmed.startsWith('Ns ')) {
+            // Parse shininess: Ns value
+            currentData.shininess = parseVal(trimmed.substring(3).trim(), 30);
+          }
+      }
+    }
+
+    // Save last material
+    if (currentMaterial && currentData) {
+      materialDataMap.set(currentMaterial, currentData);
+    }
+
+    return materialDataMap;
+  }
+
+  /**
    * Parse OBJ content and add to our export with transformations
    */
-  async integrateOBJContent(objContent, x, y, elevation, angle, name, piece) {
+  async integrateOBJContent(objContent, x, y, elevation, angle, name, piece, materialTextureMap = new Map()) {
     const lines = objContent.split('\n');
     const modelVertices = [];
     const modelNormals = [];
@@ -461,14 +660,106 @@ class OBJExporter {
     
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
-    
+
+    // Check for furniture color override (user-applied color in SweetHome3D)
+    const colorOverride = piece.getColor ? piece.getColor() : null;
+    let overrideR = 0.8, overrideG = 0.8, overrideB = 0.8;
+    if (colorOverride !== null && colorOverride !== undefined) {
+      overrideR = (colorOverride >> 16 & 0xFF) / 255.0;
+      overrideG = (colorOverride >> 8 & 0xFF) / 255.0;
+      overrideB = (colorOverride & 0xFF) / 255.0;
+    }
+
     const materialName = `furniture_${name}`;
+
+    // Create default furniture material with color override if applicable
+    if (colorOverride !== null && colorOverride !== undefined) {
+      this.materials.set(materialName, {
+        name: materialName,
+        ambient: [overrideR * 0.2, overrideG * 0.2, overrideB * 0.2],
+        diffuse: [overrideR, overrideG, overrideB],
+        specular: [0.3, 0.3, 0.3],
+        shininess: 30,
+        transparency: 1.0,
+        texture: null
+      });
+    }
     this.setMaterial(materialName);
-    
+
+    // Track current material from OBJ file
+    let currentObjMaterial = null;
+
     // Second pass: process and transform geometry
     for (const line of lines) {
       const trimmed = line.trim();
-      
+
+      // Handle usemtl directive (material assignment)
+      if (trimmed.startsWith('usemtl ')) {
+        currentObjMaterial = trimmed.substring(7).trim();
+        // Try to find the material in the parsed MTL data
+        let mtlData = null;
+        
+        // 1. Try case-insensitive lookup in the ZIP's MTL
+        if (typeof materialTextureMap.get === 'function') { // Ensure it's a Map
+          // direct lookup first
+          mtlData = materialTextureMap.get(currentObjMaterial);
+          
+          // if not found, try case-insensitive
+          if (!mtlData) {
+             const lowerMaterial = currentObjMaterial.toLowerCase();
+             for (const [key, value] of materialTextureMap.entries()) {
+                 if (key.toLowerCase() === lowerMaterial) {
+                     mtlData = value;
+                     break;
+                 }
+             }
+          }
+        }
+
+        // 2. Fallback to default materials if not found in ZIP
+        if (!mtlData && this.defaultMaterials) {
+            mtlData = this.defaultMaterials.get(currentObjMaterial);
+            if (!mtlData) {
+                 // Case-insensitive fallback for defaults too
+                 const lowerMaterial = currentObjMaterial.toLowerCase();
+                 for (const [key, value] of this.defaultMaterials.entries()) {
+                     if (key.toLowerCase() === lowerMaterial) {
+                         mtlData = value;
+                         break;
+                     }
+                 }
+            }
+             if (mtlData) {
+                // console.log(`Found material '${currentObjMaterial}' in default materials.`);
+             }
+        }
+
+        if (mtlData) {
+          // Create a unique material name to avoid conflicts
+          const specificMaterialName = `${materialName}_${currentObjMaterial.replace(/[^a-zA-Z0-9_]/g, '')}`;
+          
+          // Check if we already created this specific material
+          if (!this.materials.has(specificMaterialName)) {
+              this.materials.set(specificMaterialName, {
+                  name: specificMaterialName,
+                  ambient: mtlData.ambient || [0.2, 0.2, 0.2],
+                  diffuse: mtlData.diffuse || [0.8, 0.8, 0.8],
+                  specular: mtlData.specular || [0.0, 0.0, 0.0],
+                  shininess: mtlData.shininess || 30,
+                  transparency: 1.0,
+                  texture: mtlData.texture || null,
+                  textureTransform: mtlData.textureTransform || { xOffset: 0, yOffset: 0, angle: 0, scale: 1.0 }
+              });
+          }
+          this.setMaterial(specificMaterialName);
+        } else {
+          console.warn(`Material '${currentObjMaterial}' not found in MTL or defaults. Using gray.`);
+          this.setMaterial(materialName);
+        }
+
+
+      }
+
       if (trimmed.startsWith('v ')) {
         // Vertex
         const parts = trimmed.split(/\s+/);
@@ -618,13 +909,13 @@ class OBJExporter {
     const depth = piece.getDepth ? piece.getDepth() : 50;
     const height = piece.getHeight ? piece.getHeight() : 50;
     const angle = piece.getAngle ? piece.getAngle() : 0;
-    
+
     // Uncomment to debug bounding box dimensions: console.log(`    📐 Box dimensions: ${width.toFixed(1)} x ${depth.toFixed(1)} x ${height.toFixed(1)}`);
     // Uncomment to debug bounding box position: console.log(`    📍 Position: (${x.toFixed(1)}, ${y.toFixed(1)}, ${elevation.toFixed(1)}), angle: ${(angle * 180 / Math.PI).toFixed(1)}°`);
-    
+
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
-    
+
     // Box vertices in local coordinates
     const localVerts = [
       [-width/2, 0, -depth/2],
@@ -636,15 +927,35 @@ class OBJExporter {
       [width/2, height, depth/2],
       [-width/2, height, depth/2]
     ];
-    
+
     // Transform vertices
     const verts = localVerts.map(v => {
       const rx = v[0] * cos - v[2] * sin;
       const rz = v[0] * sin + v[2] * cos;
       return [x + rx, elevation + v[1], y + rz];
     });
-    
+
+    // Check for furniture color override
+    const furnitureColor = piece.getColor ? piece.getColor() : null;
     const materialName = `furniture_${name}`;
+
+    // Create material with correct color
+    if (furnitureColor !== null && furnitureColor !== undefined) {
+      const r = (furnitureColor >> 16 & 0xFF) / 255.0;
+      const g = (furnitureColor >> 8 & 0xFF) / 255.0;
+      const b = (furnitureColor & 0xFF) / 255.0;
+
+      this.materials.set(materialName, {
+        name: materialName,
+        ambient: [r * 0.2, g * 0.2, b * 0.2],
+        diffuse: [r, g, b],
+        specular: [0.3, 0.3, 0.3],
+        shininess: 30,
+        transparency: 1.0,
+        texture: null
+      });
+    }
+
     this.setMaterial(materialName);
     
     // Bottom
@@ -714,11 +1025,54 @@ class OBJExporter {
     const i2 = this.addVertex(v2);
     const i3 = this.addVertex(v3);
     const ni = this.addNormal(normal);
-    
+
     this.faces.push({
       vertices: [i1, i2, i3],
       normals: [ni, ni, ni],
       texCoords: [null, null, null], // Add texture coordinates if needed
+      material: this.currentMaterial
+    });
+  }
+
+  /**
+   * Add a quad face with texture coordinates (2 triangles)
+   * @param {Array} v1 - Vertex 1 [x, y, z]
+   * @param {Array} v2 - Vertex 2 [x, y, z]
+   * @param {Array} v3 - Vertex 3 [x, y, z]
+   * @param {Array} v4 - Vertex 4 [x, y, z]
+   * @param {Array} normal - Normal vector [x, y, z]
+   * @param {Object} textureTransform - Texture transform parameters
+   */
+  addQuadWithTexture(v1, v2, v3, v4, normal, textureTransform) {
+    this.addTriangleWithTexture(v1, v2, v3, normal, textureTransform);
+    this.addTriangleWithTexture(v1, v3, v4, normal, textureTransform);
+  }
+
+  /**
+   * Add a triangle face with texture coordinates
+   * @param {Array} v1 - Vertex 1 [x, y, z]
+   * @param {Array} v2 - Vertex 2 [x, y, z]
+   * @param {Array} v3 - Vertex 3 [x, y, z]
+   * @param {Array} normal - Normal vector [x, y, z]
+   * @param {Object} textureTransform - Texture transform parameters
+   */
+  addTriangleWithTexture(v1, v2, v3, normal, textureTransform) {
+    // Add vertices and normal
+    const i1 = this.addVertex(v1);
+    const i2 = this.addVertex(v2);
+    const i3 = this.addVertex(v3);
+    const ni = this.addNormal(normal);
+
+    // Generate and add UV coordinates
+    const uvs = this.generateTriangleUVs([v1, v2, v3], textureTransform);
+    const ti1 = this.addTexCoord(uvs[0][0], uvs[0][1]);
+    const ti2 = this.addTexCoord(uvs[1][0], uvs[1][1]);
+    const ti3 = this.addTexCoord(uvs[2][0], uvs[2][1]);
+
+    this.faces.push({
+      vertices: [i1, i2, i3],
+      normals: [ni, ni, ni],
+      texCoords: [ti1, ti2, ti3], // NOW HAS VALUES
       material: this.currentMaterial
     });
   }
@@ -741,6 +1095,17 @@ class OBJExporter {
    * Add normal and return its index
    */
   addNormal(n) {
+    // Unity compatibility: Validate normals
+    // Check for NaN or zero length
+    if (isNaN(n[0]) || isNaN(n[1]) || isNaN(n[2])) {
+      return null;
+    }
+    
+    // Check for zero length vector (approximate)
+    if (Math.abs(n[0]) < 1e-6 && Math.abs(n[1]) < 1e-6 && Math.abs(n[2]) < 1e-6) {
+      return null;
+    }
+
     this.normals.push(n);
     return this.normalIndex++;
   }
@@ -758,13 +1123,39 @@ class OBJExporter {
    */
   setMaterial(materialName) {
     if (!this.materials.has(materialName)) {
-      // Create default material
+      // Create default material based on type
+      // Note: For furniture, we use neutral gray - actual colors come from MTL files
+      let diffuse = [0.8, 0.8, 0.8]; // Default neutral gray
+      let specular = [0.3, 0.3, 0.3];
+      let shininess = 30;
+
+      // Set sensible default colors based on material name prefix
+      // Only for walls/floors/ceilings - furniture uses original model colors
+      if (materialName.startsWith('default_wall')) {
+        // Off-white wall color (only for default_wall, not specific wall materials)
+        diffuse = [0.95, 0.93, 0.88];
+        specular = [0.1, 0.1, 0.1];
+        shininess = 10;
+      } else if (materialName.startsWith('default_floor')) {
+        // Light beige floor color
+        diffuse = [0.85, 0.80, 0.70];
+        specular = [0.2, 0.2, 0.2];
+        shininess = 20;
+      } else if (materialName.startsWith('default_ceiling')) {
+        // White ceiling color
+        diffuse = [0.98, 0.98, 0.98];
+        specular = [0.05, 0.05, 0.05];
+        shininess = 5;
+      }
+      // Note: furniture_ materials keep neutral gray - their actual colors
+      // are set when parsing the MTL file in integrateOBJContent()
+
       this.materials.set(materialName, {
         name: materialName,
-        ambient: [0.2, 0.2, 0.2],
-        diffuse: [0.8, 0.8, 0.8],
-        specular: [0.5, 0.5, 0.5],
-        shininess: 30,
+        ambient: [diffuse[0] * 0.2, diffuse[1] * 0.2, diffuse[2] * 0.2],
+        diffuse: diffuse,
+        specular: specular,
+        shininess: shininess,
         transparency: 1.0,
         texture: null
       });
@@ -773,19 +1164,56 @@ class OBJExporter {
   }
 
   /**
-   * Get material name for wall
+   * Get material name for wall (with texture support)
+   * @param {Wall} wall - Wall object
+   * @param {number} wallIndex - Wall index for naming
+   * @returns {Promise<string>} - Material name
    */
-  getWallMaterial(wall) {
-    // Extract color or texture from wall
+  async getWallMaterial(wall, wallIndex) {
+    // 1. Check for textures FIRST (textures take priority over colors)
+    const leftSideTexture = wall.getLeftSideTexture ? wall.getLeftSideTexture() : null;
+
+    if (leftSideTexture) {
+      try {
+        const textureImage = leftSideTexture.getImage ? leftSideTexture.getImage() : null;
+        if (textureImage) {
+          const textureURL = textureImage.getURL ? textureImage.getURL() : null;
+          if (textureURL) {
+            const textureData = await this.fetchTextureData(textureURL);
+            const textureName = await this.addTexture(`wall_${wallIndex}_left`, textureURL, textureData);
+            const transform = this.parseTextureTransform(leftSideTexture);
+
+            const materialName = `wall_${wallIndex}_left_textured`;
+            this.materials.set(materialName, {
+              name: materialName,
+              ambient: [0.2, 0.2, 0.2],
+              diffuse: [0.8, 0.8, 0.8],
+              specular: [0.3, 0.3, 0.3],
+              shininess: 20,
+              transparency: 1.0,
+              texture: textureName,
+              textureTransform: transform
+            });
+
+            return materialName;
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ Failed to load texture for wall ${wallIndex}:`, error.message);
+        // Fall through to color-based material
+      }
+    }
+
+    // 2. Fall back to color-based material
     const leftSideColor = wall.getLeftSideColor ? wall.getLeftSideColor() : null;
-    
+
     if (leftSideColor) {
       const r = (leftSideColor >> 16 & 0xFF) / 255.0;
       const g = (leftSideColor >> 8 & 0xFF) / 255.0;
       const b = (leftSideColor & 0xFF) / 255.0;
-      
+
       const materialName = `wall_${Math.round(r*255)}_${Math.round(g*255)}_${Math.round(b*255)}`;
-      
+
       if (!this.materials.has(materialName)) {
         this.materials.set(materialName, {
           name: materialName,
@@ -797,11 +1225,81 @@ class OBJExporter {
           texture: null
         });
       }
-      
+
       return materialName;
     }
-    
+
     return 'default_wall';
+  }
+
+  /**
+   * Get material name for wall right side (with texture support)
+   * @param {Wall} wall - Wall object
+   * @param {number} wallIndex - Wall index for naming
+   * @returns {Promise<string>} - Material name
+   */
+  async getWallRightSideMaterial(wall, wallIndex) {
+    // 1. Check for textures FIRST (textures take priority over colors)
+    const rightSideTexture = wall.getRightSideTexture ? wall.getRightSideTexture() : null;
+
+    if (rightSideTexture) {
+      try {
+        const textureImage = rightSideTexture.getImage ? rightSideTexture.getImage() : null;
+        if (textureImage) {
+          const textureURL = textureImage.getURL ? textureImage.getURL() : null;
+          if (textureURL) {
+            const textureData = await this.fetchTextureData(textureURL);
+            const textureName = await this.addTexture(`wall_${wallIndex}_right`, textureURL, textureData);
+            const transform = this.parseTextureTransform(rightSideTexture);
+
+            const materialName = `wall_${wallIndex}_right_textured`;
+            this.materials.set(materialName, {
+              name: materialName,
+              ambient: [0.2, 0.2, 0.2],
+              diffuse: [0.8, 0.8, 0.8],
+              specular: [0.3, 0.3, 0.3],
+              shininess: 20,
+              transparency: 1.0,
+              texture: textureName,
+              textureTransform: transform
+            });
+
+            return materialName;
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ Failed to load right side texture for wall ${wallIndex}:`, error.message);
+        // Fall through to color-based material
+      }
+    }
+
+    // 2. Fall back to color-based material
+    const rightSideColor = wall.getRightSideColor ? wall.getRightSideColor() : null;
+
+    if (rightSideColor) {
+      const r = (rightSideColor >> 16 & 0xFF) / 255.0;
+      const g = (rightSideColor >> 8 & 0xFF) / 255.0;
+      const b = (rightSideColor & 0xFF) / 255.0;
+
+      const materialName = `wall_right_${Math.round(r*255)}_${Math.round(g*255)}_${Math.round(b*255)}`;
+
+      if (!this.materials.has(materialName)) {
+        this.materials.set(materialName, {
+          name: materialName,
+          ambient: [r * 0.2, g * 0.2, b * 0.2],
+          diffuse: [r, g, b],
+          specular: [0.3, 0.3, 0.3],
+          shininess: 20,
+          transparency: 1.0,
+          texture: null
+        });
+      }
+
+      return materialName;
+    }
+
+    // 3. If no right side specified, use left side as fallback
+    return this.getWallMaterial(wall, wallIndex);
   }
 
   /**
@@ -840,14 +1338,14 @@ class OBJExporter {
    */
   getRoomCeilingMaterial(room) {
     const ceilingColor = room.getCeilingColor ? room.getCeilingColor() : null;
-    
+
     if (ceilingColor) {
       const r = (ceilingColor >> 16 & 0xFF) / 255.0;
       const g = (ceilingColor >> 8 & 0xFF) / 255.0;
       const b = (ceilingColor & 0xFF) / 255.0;
-      
+
       const materialName = `ceiling_${Math.round(r*255)}_${Math.round(g*255)}_${Math.round(b*255)}`;
-      
+
       if (!this.materials.has(materialName)) {
         this.materials.set(materialName, {
           name: materialName,
@@ -859,11 +1357,101 @@ class OBJExporter {
           texture: null
         });
       }
-      
+
       return materialName;
     }
-    
+
     return 'default_ceiling';
+  }
+
+  /**
+   * Get material for room floor with texture support
+   * @param {Room} room - Room object
+   * @param {number} roomIndex - Room index for naming
+   * @returns {Promise<string>} - Material name
+   */
+  async getRoomFloorMaterialWithTexture(room, roomIndex) {
+    // 1. Check for textures FIRST
+    const floorTexture = room.getFloorTexture ? room.getFloorTexture() : null;
+
+    if (floorTexture) {
+      try {
+        const textureImage = floorTexture.getImage ? floorTexture.getImage() : null;
+        if (textureImage) {
+          const textureURL = textureImage.getURL ? textureImage.getURL() : null;
+          if (textureURL) {
+            const textureData = await this.fetchTextureData(textureURL);
+            const textureName = await this.addTexture(`room_${roomIndex}_floor`, textureURL, textureData);
+            const transform = this.parseTextureTransform(floorTexture);
+
+            const materialName = `room_${roomIndex}_floor_textured`;
+            this.materials.set(materialName, {
+              name: materialName,
+              ambient: [0.2, 0.2, 0.2],
+              diffuse: [0.8, 0.8, 0.8],
+              specular: [0.1, 0.1, 0.1],
+              shininess: 10,
+              transparency: 1.0,
+              texture: textureName,
+              textureTransform: transform
+            });
+
+            return materialName;
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ Failed to load floor texture for room ${roomIndex}:`, error.message);
+        // Fall through to color-based material
+      }
+    }
+
+    // 2. Fall back to color-based material
+    return this.getRoomFloorMaterial(room);
+  }
+
+  /**
+   * Get material for room ceiling with texture support
+   * @param {Room} room - Room object
+   * @param {number} roomIndex - Room index for naming
+   * @returns {Promise<string>} - Material name
+   */
+  async getRoomCeilingMaterialWithTexture(room, roomIndex) {
+    // 1. Check for textures FIRST
+    const ceilingTexture = room.getCeilingTexture ? room.getCeilingTexture() : null;
+
+    if (ceilingTexture) {
+      try {
+        const textureImage = ceilingTexture.getImage ? ceilingTexture.getImage() : null;
+        if (textureImage) {
+          const textureURL = textureImage.getURL ? textureImage.getURL() : null;
+          if (textureURL) {
+            const textureData = await this.fetchTextureData(textureURL);
+            const textureName = await this.addTexture(`room_${roomIndex}_ceiling`, textureURL, textureData);
+            const transform = this.parseTextureTransform(ceilingTexture);
+
+            const materialName = `room_${roomIndex}_ceiling_textured`;
+            this.materials.set(materialName, {
+              name: materialName,
+              ambient: [0.2, 0.2, 0.2],
+              diffuse: [0.8, 0.8, 0.8],
+              specular: [0.1, 0.1, 0.1],
+              shininess: 10,
+              transparency: 1.0,
+              texture: textureName,
+              textureTransform: transform
+            });
+
+            return materialName;
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ Failed to load ceiling texture for room ${roomIndex}:`, error.message);
+        // Fall through to color-based material
+      }
+    }
+
+    // 2. Fall back to color-based material
+    return this.getRoomCeilingMaterial(room);
   }
 
   /**
@@ -948,17 +1536,35 @@ class OBJExporter {
     
     for (const [name, mat] of this.materials) {
       content += `newmtl ${name}\n`;
-      content += `Ka ${this.formatNumber(mat.ambient[0])} ${this.formatNumber(mat.ambient[1])} ${this.formatNumber(mat.ambient[2])}\n`;
-      content += `Kd ${this.formatNumber(mat.diffuse[0])} ${this.formatNumber(mat.diffuse[1])} ${this.formatNumber(mat.diffuse[2])}\n`;
-      content += `Ks ${this.formatNumber(mat.specular[0])} ${this.formatNumber(mat.specular[1])} ${this.formatNumber(mat.specular[2])}\n`;
+      
+      // Unity Compatibility:
+      // 1. Do NOT export Ka (Ambient) - Unity ignores it or uses it for emission
+      // content += `Ka ${this.formatNumber(mat.ambient[0])} ${this.formatNumber(mat.ambient[1])} ${this.formatNumber(mat.ambient[2])}\n`;
+      
+      // 2. Adjust Kd (Diffuse) based on texture presence
+      if (mat.texture) {
+        // If texture exists, Kd must be WHITE (1,1,1) to avoid multiplying texture color
+        content += `Kd 1.000 1.000 1.000\n`;
+      } else {
+        content += `Kd ${this.formatNumber(mat.diffuse[0])} ${this.formatNumber(mat.diffuse[1])} ${this.formatNumber(mat.diffuse[2])}\n`;
+      }
+
+      // 3. Adjust Ks (Specular) - Default to Black (0,0,0) for non-metallic look
+      // Unity Standard Shader treats non-black Ks as metallic/specular intensity
+      content += `Ks 0.000 0.000 0.000\n`; 
+      // content += `Ks ${this.formatNumber(mat.specular[0])} ${this.formatNumber(mat.specular[1])} ${this.formatNumber(mat.specular[2])}\n`;
+      
       content += `Ns ${this.formatNumber(mat.shininess)}\n`;
       content += `d ${this.formatNumber(mat.transparency)}\n`;
       content += `illum 2\n`;
-      
+
+      // Add texture reference if exists (FLATTENED PATH)
       if (mat.texture) {
+        // Unity Compatibility: Use filename only, no folder paths
+        // This matches the flat structure in the ZIP root
         content += `map_Kd ${mat.texture}\n`;
       }
-      
+
       content += '\n';
     }
     
@@ -977,9 +1583,11 @@ class OBJExporter {
     // Add MTL file
     zip.file(`materials.mtl`, mtlContent);
     
-    // Add texture files
+    // Add texture files (FLATTENED - ROOT LEVEL)
     for (const [name, imageData] of this.textures) {
-      zip.file(`textures/${name}`, imageData);
+      // Unity Compatibility: Store textures at root level to match map_Kd "filename.jpg"
+      // Was: zip.file(`textures/${name}`, imageData);
+      zip.file(name, imageData);
     }
     
     // Generate ZIP
@@ -1030,9 +1638,264 @@ class OBJExporter {
     this.normalIndex = 1;
     this.texCoordIndex = 1;
   }
+
+  // ========================================================================
+  // Texture Management Methods
+  // ========================================================================
+
+  /**
+   * Fetch texture image data from URL as binary ArrayBuffer
+   * @param {string} url - Texture URL from TextureImage.getURL()
+   * @returns {Promise<ArrayBuffer>} - Binary image data (JPEG/PNG bytes)
+   */
+  async fetchTextureData(url) {
+    try {
+      // Handle SweetHome3D texture URLs
+      let fetchURL = url;
+
+      // Handle JAR URLs (jar:file:...!/path/to/texture.jpg)
+      if (url.startsWith('jar:')) {
+        const jarMatch = url.match(/jar:[^!]+!\/(.+)/);
+        if (jarMatch) {
+          const innerPath = jarMatch[1];
+          // Extract just the filename if it's a texture
+          const fileName = innerPath.split('/').pop();
+          fetchURL = `lib/resources/textures/${fileName}`;
+        }
+      }
+      // Handle blob URLs - these are already usable as-is
+      else if (url.startsWith('blob:')) {
+        fetchURL = url;
+      }
+      // Handle data URLs - these are already usable as-is
+      else if (url.startsWith('data:')) {
+        // For data URLs, we need to convert to ArrayBuffer differently
+        const response = await fetch(url);
+        return await response.arrayBuffer();
+      }
+      // Handle absolute URLs
+      else if (url.startsWith('http://') || url.startsWith('https://')) {
+        fetchURL = url;
+      }
+      // Handle relative paths
+      else {
+        // Check various possible locations for textures
+        if (url.startsWith('lib/')) {
+          // Already has lib/ prefix
+          fetchURL = url;
+        } else if (url.includes('/')) {
+          // Has a path, might be a full relative path
+          fetchURL = url;
+        } else {
+          // Just a filename, assume it's in the textures folder
+          fetchURL = `lib/resources/textures/${url}`;
+        }
+      }
+
+      // Fetch image as binary data
+      const response = await fetch(fetchURL);
+      if (!response.ok) {
+        // Try alternative path if first attempt fails
+        if (!url.startsWith('lib/') && !url.startsWith('http')) {
+          const altURL = `lib/resources/textures/${url.split('/').pop()}`;
+          const altResponse = await fetch(altURL);
+          if (altResponse.ok) {
+            const arrayBuffer = await altResponse.arrayBuffer();
+            console.log(`✓ Fetched texture (alt path): ${altURL} (${(arrayBuffer.byteLength / 1024).toFixed(1)} KB)`);
+            return arrayBuffer;
+          }
+        }
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      // Return as ArrayBuffer (raw binary image data - JPEG/PNG bytes)
+      const arrayBuffer = await response.arrayBuffer();
+      console.log(`✓ Fetched texture: ${fetchURL} (${(arrayBuffer.byteLength / 1024).toFixed(1)} KB)`);
+      return arrayBuffer;
+
+    } catch (error) {
+      console.warn(`⚠️ Failed to fetch texture from ${url}:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Add texture image to export with deduplication
+   * @param {string} baseName - Base name (e.g., 'wall_0_left', 'furniture_chair_0')
+   * @param {string} textureURL - Original texture URL/filename
+   * @param {ArrayBuffer} textureData - Binary image data (JPEG/PNG bytes)
+   * @returns {string} - Unique texture filename for use in MTL file
+   */
+  async addTexture(baseName, textureURL, textureData) {
+    // 1. Check for duplicate binary data (reuse if identical)
+    const duplicate = this.findDuplicateTexture(textureData);
+    if (duplicate) {
+      console.log(`✓ Texture ${baseName} is duplicate of ${duplicate}, reusing`);
+      return duplicate;
+    }
+
+    // 2. Extract file extension from URL
+    const extension = this.getTextureExtension(textureURL);
+
+    // 3. Generate unique filename
+    const textureName = this.generateUniqueTextureName(baseName, extension);
+
+    // 4. Store binary image data in Map
+    // ArrayBuffer will be written to ZIP as image file by JSZip
+    this.textures.set(textureName, textureData);
+
+    console.log(`✓ Added texture: ${textureName} (${(textureData.byteLength / 1024).toFixed(1)} KB)`);
+
+    return textureName;
+  }
+
+  /**
+   * Extract file extension from URL or default to .jpg
+   * @param {string} url - Texture URL or filename
+   * @returns {string} - File extension with dot (e.g., '.jpg')
+   */
+  getTextureExtension(url) {
+    const match = url.match(/\.(jpg|jpeg|png|bmp|gif)$/i);
+    return match ? `.${match[1].toLowerCase()}` : '.jpg';
+  }
+
+  /**
+   * Generate unique texture name with conflict resolution
+   * @param {string} baseName - Base name without extension
+   * @param {string} extension - File extension with dot
+   * @returns {string} - Unique texture filename
+   */
+  generateUniqueTextureName(baseName, extension) {
+    let name = `${baseName}${extension}`;
+    let counter = 1;
+
+    while (this.textures.has(name)) {
+      name = `${baseName}_${counter}${extension}`;
+      counter++;
+    }
+
+    return name;
+  }
+
+  /**
+   * Check if texture data is duplicate (same binary content)
+   * @param {ArrayBuffer} textureData - Binary texture data to check
+   * @returns {string|null} - Existing texture name if duplicate, null if unique
+   */
+  findDuplicateTexture(textureData) {
+    // Simple implementation: compare size first, then binary content
+    const newSize = textureData.byteLength;
+
+    for (const [name, existingData] of this.textures) {
+      if (existingData.byteLength !== newSize) {
+        continue;
+      }
+
+      // Compare binary content
+      const newBytes = new Uint8Array(textureData);
+      const existingBytes = new Uint8Array(existingData);
+
+      let identical = true;
+      for (let i = 0; i < newSize; i++) {
+        if (newBytes[i] !== existingBytes[i]) {
+          identical = false;
+          break;
+        }
+      }
+
+      if (identical) {
+        return name;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Parse texture transform from HomeTexture object
+   * @param {HomeTexture} homeTexture - SweetHome3D texture object
+   * @returns {Object} - Transform object with xOffset, yOffset, angle, scale
+   */
+  parseTextureTransform(homeTexture) {
+    if (!homeTexture) {
+      return { xOffset: 0, yOffset: 0, angle: 0, scale: 1.0 };
+    }
+
+    return {
+      xOffset: homeTexture.getXOffset ? homeTexture.getXOffset() : 0,
+      yOffset: homeTexture.getYOffset ? homeTexture.getYOffset() : 0,
+      angle: homeTexture.getAngle ? homeTexture.getAngle() : 0,
+      scale: homeTexture.getScale ? homeTexture.getScale() : 1.0
+    };
+  }
+
+  /**
+   * Generate UV coordinates for triangle vertices
+   * Uses planar projection with texture transforms
+   * @param {Array} vertices - 3 vertices [[x,y,z], [x,y,z], [x,y,z]]
+   * @param {Object} textureTransform - {xOffset, yOffset, angle, scale}
+   * @returns {Array} - UV coordinates [[u,v], [u,v], [u,v]]
+   */
+  generateTriangleUVs(vertices, textureTransform) {
+    const { xOffset, yOffset, angle, scale } = textureTransform || { xOffset: 0, yOffset: 0, angle: 0, scale: 1.0 };
+    const uvs = [];
+
+    // Determine projection plane based on normal
+    // For now, use simple XZ plane for floors, XY for walls
+    // This is a simplified approach - production code would calculate based on face normal
+
+    for (const v of vertices) {
+      // Use X and Z coordinates for floor/ceiling (horizontal surfaces)
+      // Use X and Y for walls (vertical surfaces)
+      // Determine based on Y variance
+      let u = v[0]; // X coordinate
+      let vCoord = v[2]; // Z coordinate (for floors) or Y (for walls)
+
+      // If vertices have significant Y variation, it's likely a wall
+      const yVariance = Math.abs(vertices[0][1] - vertices[1][1]) + Math.abs(vertices[1][1] - vertices[2][1]);
+      if (yVariance > 0.1) {
+        // Wall - use X and Y
+        vCoord = v[1];
+      }
+
+      // Apply texture transform
+      // 1. Scale
+      u = u / scale;
+      vCoord = vCoord / scale;
+
+      // 2. Rotate (if needed)
+      if (angle !== 0) {
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const rotU = u * cos - vCoord * sin;
+        const rotV = u * sin + vCoord * cos;
+        u = rotU;
+        vCoord = rotV;
+      }
+
+      // 3. Offset
+      u += xOffset;
+      vCoord += yOffset;
+
+      // 4. Wrap to 0-1 range (texture coordinates)
+      // Allow tiling by using modulo
+      u = u % 1.0;
+      vCoord = vCoord % 1.0;
+
+      // Ensure positive values
+      if (u < 0) u += 1.0;
+      if (vCoord < 0) vCoord += 1.0;
+
+      uvs.push([u, vCoord]);
+    }
+
+    return uvs;
+  }
 }
 
 // Export for use in browser and Node.js
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = OBJExporter;
 }
+
+
