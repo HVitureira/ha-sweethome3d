@@ -11,6 +11,7 @@ This document provides comprehensive context for LLM agents working on this modi
 ### Key Capabilities
 - Full SweetHome3D JS floor plan editor (walls, rooms, furniture, 3D preview)
 - Custom "Smart Devices" furniture catalog (sensors, switches with `ha_` prefix catalog IDs)
+- **Smart Lights**: Support for `ha_light` and `ha_switch` devices (exported as `type: light` / `type: switch`)
 - HA Entity ID field in furniture dialog (visible only for smart devices)
 - Effect radius slider per device (for particle system bounds in Unity)
 - OBJ + MTL + textures export to ZIP for Unity 3D model loading
@@ -380,9 +381,11 @@ Current smart devices use indices **#101 through #109**. To add a new device, us
 
 #### Step 5: Unity Side
 
-- Add consumer class extending `EntityMessageConsumerBase`
 - Add prefab to the project
-- Update `SceneAutoSetup.GetDevicePrefab()` to return the prefab for the new type
+- Update `SceneAutoSetup` inspector to assign prefabs to the correct slots:
+  - `lightPrefab`: For ceiling lamps/bulbs (e.g., `ha_light_bulb`)
+  - `lightSwitchPrefab`: For wall switches/dimmers (e.g., `ha_light_dimmer`, `ha_switch_plug`)
+- The script will automatically add `LightEntityConsumer` and a `Light` component (if missing) to these objects.
 
 ---
 

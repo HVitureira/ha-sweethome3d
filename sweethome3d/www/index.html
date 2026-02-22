@@ -41,13 +41,13 @@
   <script type="text/javascript" src="lib/graphics2d.min.js"></script>
   <script type="text/javascript" src="lib/recorderworker.min.js" id="recorder-worker"></script>
   <script type="text/javascript" src="lib/sweethome3d.min.js"></script>
-<!-- OBJ Exporter for Unity Integration -->
-<script type="text/javascript" src="lib/objDefaults.js"></script>
-<script type="text/javascript" src="lib/objExporter.js?v=2.5"></script>
-<script type="text/javascript" src="lib/obj-exporter-integration.js"></script>
-<script type="text/javascript" src="lib/unity-export-utils.js"></script>
-<!-- TODO: CHECK LATER - Canvas 2D renderer not working, commented out for now -->
-<!-- <script src="lib/effect-radius-renderer.js"></script> -->
+  <!-- OBJ Exporter for Unity Integration -->
+  <script type="text/javascript" src="lib/objDefaults.js"></script>
+  <script type="text/javascript" src="lib/objExporter.js?v=2.5"></script>
+  <script type="text/javascript" src="lib/obj-exporter-integration.js"></script>
+  <script type="text/javascript" src="lib/unity-export-utils.js"></script>
+  <!-- TODO: CHECK LATER - Canvas 2D renderer not working, commented out for now -->
+  <!-- <script src="lib/effect-radius-renderer.js"></script> -->
 
   <link rel="stylesheet" type="text/css" href="lib/sweethome3djs.css">
   <style type="text/css">
@@ -537,7 +537,7 @@
           <input name="description-input" size="50" type="text" />
         </div>
 
-          <!-- HOME ASSISTANT ENTITY ID FIELD -->
+        <!-- HOME ASSISTANT ENTITY ID FIELD -->
         <div class="label-cell ha-only" data-name="ha-entity-label" style="display:none;">
           <div>🏠 HA Entity ID:</div>
         </div>
@@ -554,19 +554,36 @@
             📡 Effect Radius
           </div>
           <div style="display: flex; align-items: center; gap: 10px;">
-            <input 
-              data-name="ha-effect-radius-slider" 
-              type="range" 
-              min="0.5" 
-              max="15" 
-              step="0.5" 
-              value="3.0"
-              style="flex: 1; cursor: pointer; height: 6px;"
-            />
-            <span 
-              data-name="ha-effect-radius-value" 
-              style="min-width: 50px; text-align: right; font-family: monospace; font-weight: bold; color: #0066cc;"
-            >3.0m</span>
+            <input data-name="ha-effect-radius-slider" type="range" min="0.5" max="15" step="0.5" value="3.0"
+              style="flex: 1; cursor: pointer; height: 6px;" />
+            <span data-name="ha-effect-radius-value"
+              style="min-width: 50px; text-align: right; font-family: monospace; font-weight: bold; color: #0066cc;">3.0m</span>
+          </div>
+        </div>
+
+        <!-- CONTROLS ENTITY ID FIELD (switches/dimmers only) -->
+        <div class="label-cell ha-switch-only" data-name="ha-controls-entity-label" style="display:none;">
+          <div>🔗 Controls Entity ID:</div>
+        </div>
+        <div class="ha-switch-only" data-name="ha-controls-entity-container" style="display:none;">
+          <input name="ha-controls-entity-input" size="50" type="text" placeholder="light.bedroom_ceiling"
+            pattern="[a-z_]+\.[a-z0-9_]+" title="Format: domain.entity_name (e.g., light.bedroom_ceiling)" />
+          <div style="font-size: 0.85em; color: #666; margin-top: 0.3em;">
+            The light entity this switch controls (e.g., light.bedroom_ceiling)
+          </div>
+        </div>
+
+        <!-- SWITCH TYPE DROPDOWN (switches/dimmers only) -->
+        <div class="label-cell ha-switch-only" data-name="ha-switch-type-label" style="display:none;">
+          <div>⚡ Switch Type:</div>
+        </div>
+        <div class="ha-switch-only" data-name="ha-switch-type-container" style="display:none;">
+          <select name="ha-switch-type-select" style="padding: 4px 8px; font-size: 14px;">
+            <option value="pressure">Pressure Switch (toggle + dimming)</option>
+            <option value="regular">Regular Switch (toggle only)</option>
+          </select>
+          <div style="font-size: 0.85em; color: #666; margin-top: 0.3em;">
+            Pressure: long-press to dim. Regular: toggle only.
           </div>
         </div>
 
@@ -1718,15 +1735,15 @@
       'use strict';
 
       // Add this instead:
-      window.addEventListener('load', function() {
-        setTimeout(function() {
+      window.addEventListener('load', function () {
+        setTimeout(function () {
           initHAIntegration();
           addExportButtons();  // Floating buttons (always visible)
           addExportKeyboardShortcuts();  // Ctrl+E shortcuts
           initHAEntityField();  // Initialize HA entity ID field in furniture dialog
         }, 1000);
       });
-  
+
       function initHAIntegration() {
         console.log('🏠 Initializing Home Assistant integration...');
 
@@ -1742,7 +1759,7 @@
         }, 2000); // Increased delay to 2 seconds
       }
 
-      
+
       // TODO: CHECK LATER - Canvas 2D effect radius renderer not working, commented out for now
       /*
       document.addEventListener('DOMContentLoaded', function() {
@@ -1830,32 +1847,32 @@
       function addEffectRadiusToggle() {
         const toolbar = document.querySelector('.toolbar');
         if (!toolbar) return;
-        
+
         const button = document.createElement('button');
         button.textContent = '📡 Effect Radii';
         button.className = 'toolbar-button';
         button.style.marginLeft = '10px';
         button.title = 'Toggle IoT device effect radii visualization';
-        
+
         let enabled = true;
         button.onclick = () => {
           enabled = !enabled;
           window.effectRadiusRenderer.setEnabled(enabled);
           button.style.opacity = enabled ? '1.0' : '0.5';
         };
-        
+
         toolbar.appendChild(button);
       }
-      
 
-          /**
-     * Add floating export buttons to the interface
-     */
-    function addExportButtons() {
-      // Create button container
-      const buttonContainer = document.createElement('div');
-      buttonContainer.id = 'export-button-container';
-      buttonContainer.style.cssText = `
+
+      /**
+ * Add floating export buttons to the interface
+ */
+      function addExportButtons() {
+        // Create button container
+        const buttonContainer = document.createElement('div');
+        buttonContainer.id = 'export-button-container';
+        buttonContainer.style.cssText = `
         position: fixed;
         bottom: 20px;
         right: 20px;
@@ -1864,12 +1881,12 @@
         flex-direction: column;
         gap: 10px;
       `;
-      
-      // Create "Export for Unity" button
-      const unityButton = document.createElement('button');
-      unityButton.id = 'export-unity-btn';
-      unityButton.innerHTML = '📦 Export for Unity';
-      unityButton.style.cssText = `
+
+        // Create "Export for Unity" button
+        const unityButton = document.createElement('button');
+        unityButton.id = 'export-unity-btn';
+        unityButton.innerHTML = '📦 Export for Unity';
+        unityButton.style.cssText = `
         background: #4CAF50;
         color: white;
         border: none;
@@ -1881,23 +1898,23 @@
         box-shadow: 0 2px 5px rgba(0,0,0,0.3);
         transition: all 0.3s;
       `;
-      unityButton.onmouseover = function() {
-        this.style.background = '#45a049';
-        this.style.transform = 'scale(1.05)';
-      };
-      unityButton.onmouseout = function() {
-        this.style.background = '#4CAF50';
-        this.style.transform = 'scale(1)';
-      };
-      unityButton.onclick = function() {
-        exportForUnity();
-      };
-      
-      // Create "Export to OBJ" button
-      const objButton = document.createElement('button');
-      objButton.id = 'export-obj-btn';
-      objButton.innerHTML = '🔷 Export to OBJ';
-      objButton.style.cssText = `
+        unityButton.onmouseover = function () {
+          this.style.background = '#45a049';
+          this.style.transform = 'scale(1.05)';
+        };
+        unityButton.onmouseout = function () {
+          this.style.background = '#4CAF50';
+          this.style.transform = 'scale(1)';
+        };
+        unityButton.onclick = function () {
+          exportForUnity();
+        };
+
+        // Create "Export to OBJ" button
+        const objButton = document.createElement('button');
+        objButton.id = 'export-obj-btn';
+        objButton.innerHTML = '🔷 Export to OBJ';
+        objButton.style.cssText = `
         background: #2196F3;
         color: white;
         border: none;
@@ -1909,51 +1926,51 @@
         box-shadow: 0 2px 5px rgba(0,0,0,0.3);
         transition: all 0.3s;
       `;
-      objButton.onmouseover = function() {
-        this.style.background = '#1976D2';
-        this.style.transform = 'scale(1.05)';
-      };
-      objButton.onmouseout = function() {
-        this.style.background = '#2196F3';
-        this.style.transform = 'scale(1)';
-      };
-      objButton.onclick = function() {
-        exportToOBJ();
-      };
-      
-      // Add buttons to container
-      buttonContainer.appendChild(unityButton);
-      buttonContainer.appendChild(objButton);
-      
-      // Add to page
-      document.body.appendChild(buttonContainer);
-      
-      console.log('✅ Export buttons added to interface');
-    }
+        objButton.onmouseover = function () {
+          this.style.background = '#1976D2';
+          this.style.transform = 'scale(1.05)';
+        };
+        objButton.onmouseout = function () {
+          this.style.background = '#2196F3';
+          this.style.transform = 'scale(1)';
+        };
+        objButton.onclick = function () {
+          exportToOBJ();
+        };
 
- 
-    /**
-   * Add keyboard shortcuts for export
-   */
-  function addExportKeyboardShortcuts() {
-    document.addEventListener('keydown', function(e) {
-      // Ctrl+E or Cmd+E for Unity export
-      if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
-        e.preventDefault();
-        exportForUnity();
+        // Add buttons to container
+        buttonContainer.appendChild(unityButton);
+        buttonContainer.appendChild(objButton);
+
+        // Add to page
+        document.body.appendChild(buttonContainer);
+
+        console.log('✅ Export buttons added to interface');
       }
-      
-      // Ctrl+Shift+E or Cmd+Shift+E for OBJ export
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'E') {
-        e.preventDefault();
-        exportToOBJ();
+
+
+      /**
+     * Add keyboard shortcuts for export
+     */
+      function addExportKeyboardShortcuts() {
+        document.addEventListener('keydown', function (e) {
+          // Ctrl+E or Cmd+E for Unity export
+          if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
+            e.preventDefault();
+            exportForUnity();
+          }
+
+          // Ctrl+Shift+E or Cmd+Shift+E for OBJ export
+          if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'E') {
+            e.preventDefault();
+            exportToOBJ();
+          }
+        });
+
+        console.log('✅ Export keyboard shortcuts added');
+        console.log('   Ctrl+E: Export for Unity');
+        console.log('   Ctrl+Shift+E: Export to OBJ');
       }
-    });
-    
-    console.log('✅ Export keyboard shortcuts added');
-    console.log('   Ctrl+E: Export for Unity');
-    console.log('   Ctrl+Shift+E: Export to OBJ');
-  }
 
       /**
      * Check if HA devices are loaded in the furniture catalog
@@ -2014,24 +2031,50 @@
        * Initialize HA Entity ID field in furniture dialog
        * Wires up the input field to read/write the 'haEntityId' property
        */
+      // Pending custom properties to apply after dialog closes
+      var _pendingCustomProps = {};
+      var _dialogWasOpen = false;
+
       function initHAEntityField() {
         console.log('🔧 Initializing HA Entity ID field integration...');
-        
+
         // Poll for dialog opening (when furniture is double-clicked)
         setInterval(() => {
+          // Check if dialog is currently open
+          const dialogOpen = !!document.querySelector('input[name="ha-entity-input"]');
+
+          // If dialog just closed and we have pending props, apply them
+          if (_dialogWasOpen && !dialogOpen && Object.keys(_pendingCustomProps).length > 0) {
+            console.log('📦 Dialog closed — applying pending custom properties...');
+            const controller = getFurnitureController();
+            if (controller && typeof controller.setProperty === 'function') {
+              for (const [key, val] of Object.entries(_pendingCustomProps)) {
+                if (val && val.length > 0) {
+                  controller.setProperty(key, val);
+                  console.log(`✅ Applied ${key} = ${val}`);
+                } else {
+                  controller.setProperty(key, null);
+                  console.log(`🗑️ Cleared ${key}`);
+                }
+              }
+            }
+            _pendingCustomProps = {};
+          }
+          _dialogWasOpen = dialogOpen;
+
           setupHAEntityField();
         }, 500);
-        
+
         console.log('✅ HA Entity ID field initialization complete');
         console.log('ℹ️  To use: Double-click furniture → Enter entity_id in "🏠 HA Entity ID" field');
         console.log('ℹ️  Debug: Run setupHAEntityField() in console to manually check');
-        
+
         // Expose for debugging
         window.setupHAEntityField = setupHAEntityField;
         window.getFurnitureController = getFurnitureController;
         window.isSmartDeviceFurniture = isSmartDeviceFurniture;
       }
-      
+
       /**
        * Setup the HA entity field when furniture dialog is shown
        */
@@ -2040,11 +2083,11 @@
         const haEntityInput = document.querySelector('input[name="ha-entity-input"]');
         const haEntityLabel = document.querySelector('[data-name="ha-entity-label"]');
         const haEntityContainer = document.querySelector('[data-name="ha-entity-input-container"]');
-        
+
         if (!haEntityInput || !haEntityLabel || !haEntityContainer) {
           return; // Dialog not open yet
         }
-        
+
         // Get the controller (furniture being edited)
         const controller = getFurnitureController();
         if (!controller) {
@@ -2054,11 +2097,29 @@
           haEntityInput.dataset.initialized = 'false';
           return;
         }
-        
+
         // Check if this is a smart device (ha_ prefix in catalog ID)
-        const catalogId = controller.getCatalogId ? controller.getCatalogId() : '';
+        let catalogId = controller.getCatalogId ? controller.getCatalogId() : '';
+
+        // Fallback: check properties.catalogId (placed furniture may lose getCatalogId())
+        if (!catalogId) {
+          try {
+            if (controller.properties && controller.properties.catalogId) {
+              catalogId = controller.properties.catalogId;
+            }
+          } catch (e) { /* ok */ }
+        }
+        if (!catalogId) {
+          try {
+            if (typeof controller.getProperty === 'function') {
+              const propCatalogId = controller.getProperty('catalogId');
+              if (propCatalogId) catalogId = propCatalogId;
+            }
+          } catch (e) { /* ok */ }
+        }
+
         const isSmartDevice = isSmartDeviceFurniture(controller);
-        
+
         // Debug logging
         if (haEntityInput.dataset.debugLogged !== 'true') {
           console.log('🔍 Dialog detected:');
@@ -2066,7 +2127,7 @@
           console.log('  - Is Smart Device:', isSmartDevice);
           haEntityInput.dataset.debugLogged = 'true';
         }
-        
+
         if (!isSmartDevice) {
           // Hide field for non-smart devices
           haEntityLabel.style.display = 'none';
@@ -2075,35 +2136,110 @@
           haEntityInput.dataset.debugLogged = 'false'; // Reset for next dialog
           return;
         }
-        
-        // Check if already initialized
+
+        // === SWITCH-SPECIFIC FIELDS (always re-evaluate, not gated by initialized) ===
+        const controlsEntityInput = document.querySelector('input[name="ha-controls-entity-input"]');
+        const controlsEntityLabel = document.querySelector('[data-name="ha-controls-entity-label"]');
+        const controlsEntityContainer = document.querySelector('[data-name="ha-controls-entity-container"]');
+        const switchTypeSelect = document.querySelector('select[name="ha-switch-type-select"]');
+        const switchTypeLabel = document.querySelector('[data-name="ha-switch-type-label"]');
+        const switchTypeContainer = document.querySelector('[data-name="ha-switch-type-container"]');
+
+        // Only show for switch/dimmer catalog IDs
+        const isSwitchDevice = catalogId && (catalogId.toLowerCase().includes('switch') || catalogId.toLowerCase().includes('dimmer'));
+
+        if (controlsEntityInput && controlsEntityLabel && controlsEntityContainer) {
+          if (isSwitchDevice) {
+            controlsEntityLabel.style.display = '';
+            controlsEntityContainer.style.display = '';
+            controlsEntityInput.haController = controller;
+
+            // Read current value
+            let currentControlsEntity = null;
+            try {
+              if (typeof controller.getProperty === 'function') {
+                currentControlsEntity = controller.getProperty('controlsEntityId');
+              }
+            } catch (e) { /* ok */ }
+            controlsEntityInput.value = currentControlsEntity || '';
+
+            // Save on change (listener added once)
+            if (!controlsEntityInput.hasSwitchListener) {
+              controlsEntityInput.addEventListener('change', function () {
+                const newValue = controlsEntityInput.value.trim();
+                console.log('\ud83d\udd17 Controls entity ID changed to:', newValue || '(empty)');
+                if (controlsEntityInput.haController) {
+                  setCustomProperty(controlsEntityInput.haController, 'controlsEntityId', newValue);
+                }
+              });
+              controlsEntityInput.hasSwitchListener = true;
+            }
+          } else {
+            controlsEntityLabel.style.display = 'none';
+            controlsEntityContainer.style.display = 'none';
+          }
+        }
+
+        if (switchTypeSelect && switchTypeLabel && switchTypeContainer) {
+          if (isSwitchDevice) {
+            switchTypeLabel.style.display = '';
+            switchTypeContainer.style.display = '';
+            switchTypeSelect.haController = controller;
+
+            // Read current value
+            let currentSwitchType = null;
+            try {
+              if (typeof controller.getProperty === 'function') {
+                currentSwitchType = controller.getProperty('switchType');
+              }
+            } catch (e) { /* ok */ }
+            switchTypeSelect.value = currentSwitchType || 'pressure';
+
+            // Save on change (listener added once)
+            if (!switchTypeSelect.hasSwitchTypeListener) {
+              switchTypeSelect.addEventListener('change', function () {
+                const newValue = switchTypeSelect.value;
+                console.log('\u26a1 Switch type changed to:', newValue);
+                if (switchTypeSelect.haController) {
+                  setCustomProperty(switchTypeSelect.haController, 'switchType', newValue);
+                }
+              });
+              switchTypeSelect.hasSwitchTypeListener = true;
+            }
+          } else {
+            switchTypeLabel.style.display = 'none';
+            switchTypeContainer.style.display = 'none';
+          }
+        }
+
+        // Check if already initialized (HA entity field setup)
         if (haEntityInput.dataset.initialized === 'true') {
           return;
         }
-        
+
         console.log('🔧 Setting up HA Entity ID field for smart device...');
         console.log('  - Showing field elements');
-        
+
         // Show the field (only for smart devices) - remove display:none to use default grid layout
         haEntityLabel.style.display = '';
         haEntityContainer.style.display = '';
-        
+
         console.log('  - Label display now:', haEntityLabel.style.display || 'default');
         console.log('  - Container display now:', haEntityContainer.style.display || 'default');
-        
+
         // Read current HA entity ID from furniture properties
         const currentEntityId = getHAEntityId(controller);
         haEntityInput.value = currentEntityId || '';
-        
+
         console.log('📋 Current HA entity ID:', currentEntityId || '(none)');
-        
+
         // Store the controller reference on the input element
         haEntityInput.haController = controller;
-        
+
         // Instead of saving on input, we'll save on dialog close
         // Remove any existing blur listener first
         if (!haEntityInput.hasBlurListener) {
-          haEntityInput.addEventListener('change', function() {
+          haEntityInput.addEventListener('change', function () {
             const newValue = haEntityInput.value.trim();
             console.log('✏️ HA entity ID field changed to:', newValue || '(empty)');
             // Save immediately on change
@@ -2113,26 +2249,27 @@
           });
           haEntityInput.hasBlurListener = true;
         }
-        
+
         // Mark as initialized
         haEntityInput.dataset.initialized = 'true';
-        
+
         console.log('✅ HA Entity ID field setup complete');
+
       }
-      
+
       /**
        * Check if furniture is a smart device (has ha_ prefix)
        */
       function isSmartDeviceFurniture(furniture) {
         try {
           if (!furniture) return false;
-          
+
           // Check main catalog ID for ha_ prefix
           const catalogId = furniture.getCatalogId ? furniture.getCatalogId() : '';
           if (catalogId && catalogId.indexOf('ha_') === 0) {
             return true;
           }
-          
+
           // Check properties.catalogId for ha_ prefix (for custom created devices)
           try {
             if (furniture.properties && furniture.properties.catalogId) {
@@ -2145,7 +2282,7 @@
           } catch (e) {
             // Properties might not be accessible, continue
           }
-          
+
           // Check if creator is "HA" (Home Assistant created devices)
           try {
             if (furniture.creator && furniture.creator === 'HA') {
@@ -2155,7 +2292,7 @@
           } catch (e) {
             // Creator might not be accessible, continue
           }
-          
+
           // Also check category name
           if (typeof furniture.getCategory === 'function') {
             const category = furniture.getCategory();
@@ -2166,14 +2303,14 @@
               }
             }
           }
-          
+
           return false;
         } catch (e) {
           console.log('ℹ️ Could not determine if furniture is smart device:', e.message);
           return false;
         }
       }
-      
+
       /**
        * Get the furniture controller from the current dialog
        */
@@ -2181,15 +2318,15 @@
         try {
           // Try to access the application's home and selected items
           if (!window.application) return null;
-          
+
           const homes = window.application.getHomes();
           if (!homes || homes.length === 0) return null;
-          
+
           const home = homes[0];
           const selectedItems = home.getSelectedItems();
-          
+
           if (!selectedItems || selectedItems.length === 0) return null;
-          
+
           // Find the first furniture piece
           for (let i = 0; i < selectedItems.length; i++) {
             const item = selectedItems[i];
@@ -2198,14 +2335,14 @@
               return item;
             }
           }
-          
+
           return null;
         } catch (e) {
           console.error('Error getting furniture controller:', e);
           return null;
         }
       }
-      
+
       /**
        * Get HA entity ID from furniture properties
        */
@@ -2215,24 +2352,24 @@
             console.log('⚠️ Cannot get HA entity ID - furniture missing or no getProperty method');
             return null;
           }
-          
+
           // Try to get the property
           const entityId = furniture.getProperty('haEntityId');
           console.log('🔍 Retrieved HA entity ID from property:', entityId);
-          
+
           // Also log all properties for debugging
           if (typeof furniture.getPropertyNames === 'function') {
             const propertyNames = furniture.getPropertyNames();
             console.log('📝 All furniture properties:', propertyNames);
           }
-          
+
           return entityId;
         } catch (e) {
           console.log('ℹ️ No HA entity ID found on furniture:', e.message);
           return null;
         }
       }
-      
+
       /**
        * Set HA entity ID on controller's additional properties
        * This ensures it will be saved when the dialog OK button is clicked
@@ -2243,23 +2380,23 @@
             console.error('❌ No controller object to set entity ID on');
             return;
           }
-          
+
           console.log('💾 Setting HA entity ID on controller:', entityId);
-          
+
           // Get current additional properties
           let additionalProps = controller.getAdditionalProperties();
           console.log('📋 Current additional properties:', additionalProps);
-          
+
           // Initialize if null
           if (!additionalProps) {
             additionalProps = { entries: [] };
           }
-          
+
           // Ensure entries array exists
           if (!additionalProps.entries) {
             additionalProps.entries = [];
           }
-          
+
           // Find or create the haEntityId entry
           let found = false;
           for (let i = 0; i < additionalProps.entries.length; i++) {
@@ -2278,22 +2415,22 @@
               break;
             }
           }
-          
+
           // Add new entry if not found
           if (!found && entityId && entityId.length > 0) {
             additionalProps.entries.push({
               key: 'haEntityId',
               value: entityId,
-              getKey: function() { return this.key; },
-              getValue: function() { return this.value; }
+              getKey: function () { return this.key; },
+              getValue: function () { return this.value; }
             });
             console.log('✅ Added new HA entity ID entry:', entityId);
           }
-          
+
           // Update the controller's additional properties
           controller.setAdditionalProperties(additionalProps.entries.length > 0 ? additionalProps : null);
           console.log('� Saved to controller additional properties');
-          
+
           // Verify
           const verify = controller.getAdditionalProperties();
           console.log('🔍 Verification - controller properties:', verify);
@@ -2301,7 +2438,38 @@
           console.error('❌ Error setting HA entity ID:', e);
         }
       }
-      
+
+      /**
+       * Set a custom property on controller's additional properties (generic version)
+       * Works like setHAEntityId but for any property key
+       */
+      function setCustomProperty(controller, propertyKey, value) {
+        try {
+          if (!controller) {
+            console.error('❌ No controller object to set property on');
+            return;
+          }
+
+          console.log(`💾 Caching ${propertyKey}:`, value);
+
+          // Store in pending cache (applied after dialog closes)
+          _pendingCustomProps[propertyKey] = value || '';
+
+          // Also try to set immediately on the furniture item
+          if (typeof controller.setProperty === 'function') {
+            if (value && value.length > 0) {
+              controller.setProperty(propertyKey, value);
+            } else {
+              controller.setProperty(propertyKey, null);
+            }
+            console.log(`✅ Set ${propertyKey} immediately + cached for post-dialog apply`);
+          }
+        } catch (e) {
+          console.error(`❌ Error setting ${propertyKey}:`, e);
+        }
+      }
+
+
       /**
      * Wait for application to be ready
      */
@@ -2336,149 +2504,149 @@
         }
       }
 
-    /**
-     * Export floor plan with device data for Unity
-     * Uses UnityExportUtilities class from unity-export-utils.js
-     */
-    async function exportForUnity() {
-      console.log('📤 Starting Unity export...');
-      
-      if (!window.application) {
-        showError('Application not ready');
-        return;
-      }
-      
-      // Check if UnityExportUtilities is loaded
-      if (typeof UnityExportUtilities === 'undefined') {
-        showError('Unity export utilities not loaded. Please refresh the page.');
-        console.error('UnityExportUtilities class not found');
-        return;
-      }
-      
-      try {
-        const homes = window.application.getHomes();
-        
-        if (!homes || homes.length === 0) {
-          showError('No home loaded');
+      /**
+       * Export floor plan with device data for Unity
+       * Uses UnityExportUtilities class from unity-export-utils.js
+       */
+      async function exportForUnity() {
+        console.log('📤 Starting Unity export...');
+
+        if (!window.application) {
+          showError('Application not ready');
           return;
         }
-        
-        const home = homes[0];
-        const homeName = home.getName ? home.getName() : 'smart-home';
-        
-        // Count smart devices (using ha_ prefix check)
-        const deviceCount = countHADevices(home);
-        
-        if (deviceCount === 0) {
-          const proceed = confirm(
-            'No smart devices found in the floor plan.\n\n' +
-            'Add smart devices from the "Smart Devices" category in the furniture catalog before exporting.\n\n' +
-            'Export anyway?'
-          );
-          if (!proceed) return;
+
+        // Check if UnityExportUtilities is loaded
+        if (typeof UnityExportUtilities === 'undefined') {
+          showError('Unity export utilities not loaded. Please refresh the page.');
+          console.error('UnityExportUtilities class not found');
+          return;
         }
-        
-        showLoading('Exporting for Unity: 3D model, device data, and Unity import script...');
-        
-        // Use UnityExportUtilities for complete export
-        const result = await UnityExportUtilities.exportForUnity(
-          home,
-          window.homeComponent3D || null,
-          homeName
-        );
-        
-        hideLoading();
-        
-        // Show success message
-        const message = `Unity export complete!\n\n` +
-          `📦 3D Geometry: ${homeName}_geometry.zip\n` +
-          `   - ${result.geometry.vertices} vertices\n` +
-          `   - ${result.geometry.faces} faces\n` +
-          `   - ${result.geometry.materials} materials\n\n` +
-          `📋 Device Data: ${homeName}_devices.json\n` +
-          `   - ${result.devices} smart device${result.devices !== 1 ? 's' : ''}\n` +
-          `   - ${result.rooms} room${result.rooms !== 1 ? 's' : ''}\n\n` +
-          `📜 Unity Import Script: ${homeName}_Import.cs\n\n` +
-          `Import all files into Unity for your digital twin.`;
-        
-        showNotification(message, 'success');
-        console.log('✅ Unity export complete:', result);
-        
-      } catch (e) {
-        hideLoading();
-        showError('Unity export failed: ' + e.message);
-        console.error('❌ Unity export error:', e);
-        console.error('Stack trace:', e.stack);
+
+        try {
+          const homes = window.application.getHomes();
+
+          if (!homes || homes.length === 0) {
+            showError('No home loaded');
+            return;
+          }
+
+          const home = homes[0];
+          const homeName = home.getName ? home.getName() : 'smart-home';
+
+          // Count smart devices (using ha_ prefix check)
+          const deviceCount = countHADevices(home);
+
+          if (deviceCount === 0) {
+            const proceed = confirm(
+              'No smart devices found in the floor plan.\n\n' +
+              'Add smart devices from the "Smart Devices" category in the furniture catalog before exporting.\n\n' +
+              'Export anyway?'
+            );
+            if (!proceed) return;
+          }
+
+          showLoading('Exporting for Unity: 3D model, device data, and Unity import script...');
+
+          // Use UnityExportUtilities for complete export
+          const result = await UnityExportUtilities.exportForUnity(
+            home,
+            window.homeComponent3D || null,
+            homeName
+          );
+
+          hideLoading();
+
+          // Show success message
+          const message = `Unity export complete!\n\n` +
+            `📦 3D Geometry: ${homeName}_geometry.zip\n` +
+            `   - ${result.geometry.vertices} vertices\n` +
+            `   - ${result.geometry.faces} faces\n` +
+            `   - ${result.geometry.materials} materials\n\n` +
+            `📋 Device Data: ${homeName}_devices.json\n` +
+            `   - ${result.devices} smart device${result.devices !== 1 ? 's' : ''}\n` +
+            `   - ${result.rooms} room${result.rooms !== 1 ? 's' : ''}\n\n` +
+            `📜 Unity Import Script: ${homeName}_Import.cs\n\n` +
+            `Import all files into Unity for your digital twin.`;
+
+          showNotification(message, 'success');
+          console.log('✅ Unity export complete:', result);
+
+        } catch (e) {
+          hideLoading();
+          showError('Unity export failed: ' + e.message);
+          console.error('❌ Unity export error:', e);
+          console.error('Stack trace:', e.stack);
+        }
       }
-    }
 
 
-    /**
- * Export 3D scene to OBJ format using the complete exporter
- */
-async function exportToOBJ() {
-  console.log('📦 Starting OBJ export with complete exporter...');
-  
-  if (!window.application) {
-    showError('Application not ready');
-    console.error('❌ window.application is not available');
-    return;
-  }
-  
-  try {
-    const homes = window.application.getHomes();
-    console.log('Found homes:', homes ? homes.length : 0);
-    
-    if (!homes || homes.length === 0) {
-      showError('No home loaded. Please create or open a home first.');
-      return;
-    }
-    
-    const home = homes[0];
-    const homeName = home.getName ? home.getName() : 'smart-home';
-    
-    console.log('📋 Home details:');
-    console.log('  - Name:', homeName);
-    console.log('  - Has getWalls:', typeof home.getWalls === 'function');
-    console.log('  - Has getRooms:', typeof home.getRooms === 'function');
-    console.log('  - Has getFurniture:', typeof home.getFurniture === 'function');
-    
-    // Try to count elements
-    if (home.getWalls) {
-      const walls = home.getWalls();
-      console.log('  - Walls:', walls ? walls.length : 0);
-    }
-    if (home.getRooms) {
-      const rooms = home.getRooms();
-      console.log('  - Rooms:', rooms ? rooms.length : 0);
-    }
-    if (home.getFurniture) {
-      const furniture = home.getFurniture();
-      console.log('  - Furniture:', furniture ? furniture.length : 0);
-    }
-    
-    showLoading('Exporting 3D model to OBJ...');
-    
-    // Use the complete OBJ exporter
-    const exporter = new OBJExporter();
-    const result = await exporter.exportToOBJ(
-      home, 
-      window.homeComponent3D || null, 
-      homeName + '.zip'
-    );
-    
-    hideLoading();
-    
-    console.log('✅ OBJ export complete:', result);
-    showNotification(`Export successful! ${result.vertices} vertices, ${result.faces} faces`, 'success');
-    
-  } catch (e) {
-    hideLoading();
-    showError('OBJ export failed: ' + e.message);
-    console.error('❌ OBJ export error:', e);
-    console.error('Stack trace:', e.stack);
-  }
-}
+      /**
+   * Export 3D scene to OBJ format using the complete exporter
+   */
+      async function exportToOBJ() {
+        console.log('📦 Starting OBJ export with complete exporter...');
+
+        if (!window.application) {
+          showError('Application not ready');
+          console.error('❌ window.application is not available');
+          return;
+        }
+
+        try {
+          const homes = window.application.getHomes();
+          console.log('Found homes:', homes ? homes.length : 0);
+
+          if (!homes || homes.length === 0) {
+            showError('No home loaded. Please create or open a home first.');
+            return;
+          }
+
+          const home = homes[0];
+          const homeName = home.getName ? home.getName() : 'smart-home';
+
+          console.log('📋 Home details:');
+          console.log('  - Name:', homeName);
+          console.log('  - Has getWalls:', typeof home.getWalls === 'function');
+          console.log('  - Has getRooms:', typeof home.getRooms === 'function');
+          console.log('  - Has getFurniture:', typeof home.getFurniture === 'function');
+
+          // Try to count elements
+          if (home.getWalls) {
+            const walls = home.getWalls();
+            console.log('  - Walls:', walls ? walls.length : 0);
+          }
+          if (home.getRooms) {
+            const rooms = home.getRooms();
+            console.log('  - Rooms:', rooms ? rooms.length : 0);
+          }
+          if (home.getFurniture) {
+            const furniture = home.getFurniture();
+            console.log('  - Furniture:', furniture ? furniture.length : 0);
+          }
+
+          showLoading('Exporting 3D model to OBJ...');
+
+          // Use the complete OBJ exporter
+          const exporter = new OBJExporter();
+          const result = await exporter.exportToOBJ(
+            home,
+            window.homeComponent3D || null,
+            homeName + '.zip'
+          );
+
+          hideLoading();
+
+          console.log('✅ OBJ export complete:', result);
+          showNotification(`Export successful! ${result.vertices} vertices, ${result.faces} faces`, 'success');
+
+        } catch (e) {
+          hideLoading();
+          showError('OBJ export failed: ' + e.message);
+          console.error('❌ OBJ export error:', e);
+          console.error('Stack trace:', e.stack);
+        }
+      }
 
       /**
        * Serialize home to JSON
@@ -2495,7 +2663,7 @@ async function exportToOBJ() {
           const furniture = home.getFurniture();
           for (let i = 0; i < furniture.length; i++) {
             const piece = furniture[i];
-            
+
             // Get HA entity ID if present
             let haEntityId = null;
             try {
@@ -2505,7 +2673,7 @@ async function exportToOBJ() {
             } catch (e) {
               // Property doesn't exist, that's ok
             }
-            
+
             const furnitureData = {
               catalogId: piece.getCatalogId ? piece.getCatalogId() : '',
               name: piece.getName ? piece.getName() : '',
@@ -2514,12 +2682,12 @@ async function exportToOBJ() {
               elevation: piece.getElevation ? piece.getElevation() : 0,
               angle: piece.getAngle ? piece.getAngle() : 0
             };
-            
+
             // Add HA entity ID if present
             if (haEntityId) {
               furnitureData.haEntityId = haEntityId;
             }
-            
+
             data.furniture.push(furnitureData);
           }
         }
@@ -2577,7 +2745,7 @@ async function exportToOBJ() {
           for (let i = 0; i < furniture.length; i++) {
             const piece = furniture[i];
             const catalogId = piece.getCatalogId ? piece.getCatalogId() : '';
-            
+
             // Use same detection logic as UnityExportUtilities.isIoTDevice
             if (UnityExportUtilities.isIoTDevice(catalogId, piece)) {
               count++;
@@ -2634,76 +2802,76 @@ async function exportToOBJ() {
         }
       }
 
-    
-    /**
-     * Update device counter
-     */
-    function updateDeviceCounter() {
-      const counter = document.getElementById('ha-device-counter');
-      if (!counter || !window.application) return;
-      
-      try {
-        const homes = window.application.getHomes();  // ← Changed to getHomes()
-        if (homes && homes.length > 0) {
-          const home = homes[0];
-          const count = countHADevices(home);
-          counter.textContent = count + ' smart device' + (count !== 1 ? 's' : '');
-          counter.style.background = count > 0 ? '#4CAF50' : '#999';
-        }
-      } catch (e) {
-        console.error('Error updating device counter:', e);
-      }
-    }
 
-        /**
-     * Add Export menu item (if menu exists)
-     */
-    function addExportMenuItem() {
-      const checkMenu = setInterval(function () {
-        if (window.application && window.application.getMenuBar) {
-          clearInterval(checkMenu);
-          
-          try {
-            const menuBar = window.application.getMenuBar();
-            if (menuBar) {
-              const menus = menuBar.getSubElements ? menuBar.getSubElements() : [];
-              
-              for (let i = 0; i < menus.length; i++) {
-                const menu = menus[i];
-                if (menu.getText && menu.getText().includes('File')) {
-                  
-                  const exportUnityItem = {
-                    text: 'Export for Unity...',
-                    action: function () {
-                      exportForUnity();
+      /**
+       * Update device counter
+       */
+      function updateDeviceCounter() {
+        const counter = document.getElementById('ha-device-counter');
+        if (!counter || !window.application) return;
+
+        try {
+          const homes = window.application.getHomes();  // ← Changed to getHomes()
+          if (homes && homes.length > 0) {
+            const home = homes[0];
+            const count = countHADevices(home);
+            counter.textContent = count + ' smart device' + (count !== 1 ? 's' : '');
+            counter.style.background = count > 0 ? '#4CAF50' : '#999';
+          }
+        } catch (e) {
+          console.error('Error updating device counter:', e);
+        }
+      }
+
+      /**
+   * Add Export menu item (if menu exists)
+   */
+      function addExportMenuItem() {
+        const checkMenu = setInterval(function () {
+          if (window.application && window.application.getMenuBar) {
+            clearInterval(checkMenu);
+
+            try {
+              const menuBar = window.application.getMenuBar();
+              if (menuBar) {
+                const menus = menuBar.getSubElements ? menuBar.getSubElements() : [];
+
+                for (let i = 0; i < menus.length; i++) {
+                  const menu = menus[i];
+                  if (menu.getText && menu.getText().includes('File')) {
+
+                    const exportUnityItem = {
+                      text: 'Export for Unity...',
+                      action: function () {
+                        exportForUnity();
+                      }
+                    };
+
+                    const exportOBJItem = {
+                      text: 'Export to OBJ...',
+                      action: function () {
+                        exportToOBJ();
+                      }
+                    };
+
+                    if (menu.addSeparator) {
+                      menu.addSeparator();
                     }
-                  };
-                  
-                  const exportOBJItem = {
-                    text: 'Export to OBJ...',
-                    action: function () {
-                      exportToOBJ();
+                    if (menu.add) {
+                      menu.add(exportUnityItem);
+                      menu.add(exportOBJItem);
                     }
-                  };
-                  
-                  if (menu.addSeparator) {
-                    menu.addSeparator();
+
+                    console.log('✅ Export menu items added');
+                    break;
                   }
-                  if (menu.add) {
-                    menu.add(exportUnityItem);
-                    menu.add(exportOBJItem);
-                  }
-                  
-                  console.log('✅ Export menu items added');
-                  break;
                 }
               }
+            } catch (e) {
+              console.error('Error adding menu items:', e);
             }
-          } catch (e) {
-            console.error('Error adding menu items:', e);
           }
-        }
-      }, 500);
+        }, 500);
         setTimeout(function () {
           clearInterval(checkMenu);
         }, 10000);

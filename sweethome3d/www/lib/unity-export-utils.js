@@ -146,6 +146,31 @@ class UnityExportUtilities {
             console.log(`✅ Device "${deviceData.name}" has entity ID: ${haEntityId}`);
           }
           
+          // Add controlsEntityId for switches (which light entity this switch controls)
+          let controlsEntityId = null;
+          try {
+            if (typeof piece.getProperty === 'function') {
+              controlsEntityId = piece.getProperty('controlsEntityId');
+            }
+          } catch (e) { /* Property doesn't exist, ok */ }
+
+          if (controlsEntityId && controlsEntityId.length > 0) {
+            deviceData.controlsEntityId = controlsEntityId;
+            console.log(`🔗 Switch "${deviceData.name}" controls: ${controlsEntityId}`);
+          }
+
+          // Add switch type (regular or pressure)
+          let switchType = null;
+          try {
+            if (typeof piece.getProperty === 'function') {
+              switchType = piece.getProperty('switchType');
+            }
+          } catch (e) { /* ok */ }
+
+          if (switchType) {
+            deviceData.switchType = switchType; // "regular" or "pressure"
+          }
+          
           // Add effect radius and propagation area for Unity particle systems
           const effectData = this.extractEffectPropagation(piece, home);
           if (effectData) {
@@ -619,6 +644,9 @@ class UnityExportUtilities {
     }
     if (combined.includes('light') && combined.includes('sensor')) {
       return 'light_sensor';
+    }
+    if (combined.includes('light') && !combined.includes('sensor')) {
+      return 'light';
     }
     if (combined.includes('camera')) {
       return 'camera';
