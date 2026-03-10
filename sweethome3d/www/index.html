@@ -2378,72 +2378,10 @@
       }
 
       /**
-       * Set HA entity ID on controller's additional properties
-       * This ensures it will be saved when the dialog OK button is clicked
+       * Set HA entity ID on furniture piece using setProperty
        */
       function setHAEntityId(controller, entityId) {
-        try {
-          if (!controller) {
-            console.error('❌ No controller object to set entity ID on');
-            return;
-          }
-
-          console.log('💾 Setting HA entity ID on controller:', entityId);
-
-          // Get current additional properties
-          let additionalProps = controller.getAdditionalProperties();
-          console.log('📋 Current additional properties:', additionalProps);
-
-          // Initialize if null
-          if (!additionalProps) {
-            additionalProps = { entries: [] };
-          }
-
-          // Ensure entries array exists
-          if (!additionalProps.entries) {
-            additionalProps.entries = [];
-          }
-
-          // Find or create the haEntityId entry
-          let found = false;
-          for (let i = 0; i < additionalProps.entries.length; i++) {
-            const entry = additionalProps.entries[i];
-            if (entry.key === 'haEntityId' || (entry.key && entry.key.getName && entry.key.getName() === 'haEntityId')) {
-              // Update existing entry
-              if (entityId && entityId.length > 0) {
-                entry.value = entityId;
-                console.log('✅ Updated existing HA entity ID entry:', entityId);
-              } else {
-                // Remove entry if empty
-                additionalProps.entries.splice(i, 1);
-                console.log('🗑️ Removed empty HA entity ID entry');
-              }
-              found = true;
-              break;
-            }
-          }
-
-          // Add new entry if not found
-          if (!found && entityId && entityId.length > 0) {
-            additionalProps.entries.push({
-              key: 'haEntityId',
-              value: entityId,
-              getKey: function () { return this.key; },
-              getValue: function () { return this.value; }
-            });
-            console.log('✅ Added new HA entity ID entry:', entityId);
-          }
-
-          // Update the controller's additional properties
-          controller.setAdditionalProperties(additionalProps.entries.length > 0 ? additionalProps : null);
-          console.log('� Saved to controller additional properties');
-
-          // Verify
-          const verify = controller.getAdditionalProperties();
-          console.log('🔍 Verification - controller properties:', verify);
-        } catch (e) {
-          console.error('❌ Error setting HA entity ID:', e);
-        }
+        setCustomProperty(controller, 'haEntityId', entityId);
       }
 
       /**
