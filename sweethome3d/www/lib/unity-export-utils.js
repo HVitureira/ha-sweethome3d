@@ -168,7 +168,7 @@ class UnityExportUtilities {
           } catch (e) { /* ok */ }
 
           if (switchType) {
-            deviceData.switchType = switchType; // "regular" or "pressure"
+            deviceData.switchType = switchType; // "fixed" or "pressure"
           }
           
           // Add effect radius and propagation area for Unity particle systems
@@ -790,6 +790,8 @@ public class ${this.toPascalCase(baseName)}Importer : MonoBehaviour
         tracker.deviceType = device.type;
         tracker.deviceName = device.name;
         tracker.haEntityId = device.haEntityId;  // Home Assistant entity ID
+        tracker.controlsEntityId = device.controlsEntityId;
+        tracker.switchType = device.switchType;
         
         instantiatedDevices.Add(deviceObj);
         
@@ -846,6 +848,8 @@ public class ${this.toPascalCase(baseName)}Importer : MonoBehaviour
         public bool isIoTDevice;
         public Dimensions dimensions;
         public string haEntityId;  // Home Assistant entity ID (optional)
+        public string controlsEntityId;
+        public string switchType;
     }
     
     [System.Serializable]
@@ -883,6 +887,10 @@ public class IoTDeviceTracker : MonoBehaviour
     
     [Header("Home Assistant Integration")]
     public string haEntityId;  // Home Assistant entity_id (e.g., "light.living_room")
+    
+    [Header("Switch Configuration")]
+    public string controlsEntityId;
+    public string switchType;
     
     [Header("MQTT Integration")]
     public string mqttTopic;
