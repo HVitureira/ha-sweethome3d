@@ -80,6 +80,28 @@ ha-sweethome3d/
 │   │       ├── resources/          # Furniture catalog assets (294 items)
 │   │       └── (other SH3D core libs: gl-matrix, jszip, etc.)
 │   └── README.md                   # Add-on specific readme
+├── www-vue/                        # Vue 3 TypeScript overlay app (see section below)
+│   ├── index.html                  # Vite entry — loads SH3D scripts + mounts #vue-app
+│   ├── vite.config.ts              # publicDir → ../sweethome3d/www; PHP proxy
+│   ├── tsconfig.json               # TypeScript project config (strict)
+│   ├── package.json                # pinia, vue (no vue-router)
+│   └── src/
+│       ├── main.ts                 # createApp → mounts to #vue-app
+│       ├── App.vue                 # Root: renders ExportButtons + FurnitureDialogEnhancer
+│       ├── types/
+│       │   └── sweethome3d.d.ts    # Ambient globals: SH3DFurniture, SH3DApplication, window.*
+│       ├── utils/
+│       │   └── deviceDetection.ts  # isSmartDeviceFurniture, isSwitchFurniture, resolveCatalogId
+│       ├── services/
+│       │   └── furnitureService.ts # Thin wrappers: getFurnitureController, get/setCustomProperty
+│       ├── stores/
+│       │   └── furnitureStore.ts   # Pinia store: active controller + all HA property refs
+│       ├── composables/
+│       │   └── useFurnitureDialog.ts # MutationObserver: detects dialog open/close
+│       └── components/
+│           ├── ExportButtons.vue   # Floating export buttons (Ctrl+E / Ctrl+Shift+E)
+│           └── dialogs/
+│               └── FurnitureDialogEnhancer.vue  # Teleport: injects HA fields into live dialog
 ├── docker-compose.yml              # Local dev compose file
 ├── README.md                       # Repository readme
 ├── AGENTS.md                       # This file
@@ -109,6 +131,153 @@ ha-sweethome3d/
 | `www/lib/jszip.min.js` | ZIP file handling |
 | `www/lib/graphics2d.min.js` | 2D rendering |
 | `www/lib/geom.min.js` | Geometry processing |
+
+---
+
+## Vue 3 Frontend Overlay (`www-vue/`)
+
+The `www-vue/` directory contains a **Vue 3 + TypeScript app** that overlays the SweetHome3D canvas. It adds HA-specific UI (furniture dialog fields, export buttons) without touching the original SH3D JS source.
+
+### How the overlay works
+
+```
+www-vue/index.html
+  ├── <script> tags loading SH3D globals (sweethome3d.min.js, objExporter.js, etc.)
+  │     These run first, creating window.application, window.homeComponent3D, etc.
+  └── <div id="vue-app">   ← Vue mounts here
+        position: fixed; inset: 0; z-index: 1000; pointer-events: none
+        (transparent overlay; individual components opt into pointer-events: auto)
+```
+
+The overlay is **invisible by default**. Only interactive components (export buttons, injected dialog fields) set `pointer-events: auto`.
+
+### Key architectural patterns
+
+#### 1. Dialog detection — `useFurnitureDialog.ts`
+A `MutationObserver` on `document.body` watches for `div.home-furniture-dialog` being added/removed. The guard `el.closest('.dialog-template') === null` distinguishes the **live dialog** from the hidden template copy that always exists in the DOM.
+
+```
+SH3D opens dialog
+  → MutationObserver fires (childList, subtree)
+  → isLiveDialog() returns true
+  → getFurnitureController() reads window.application.getHomes()[0].getSelectedItems()[0]
+  → store.loadFromController(controller)  ← populates all reactive refs
+  → teleportTarget = liveDialog.querySelector('[data-name="name-and-price-panel"]')
+  → dialogOpen = true
+```
+
+#### 2. Dialog field injection — `FurnitureDialogEnhancer.vue`
+Uses Vue `<Teleport>` to inject HA fields **into** the live SweetHome3D dialog grid, without modifying index.html or any SH3D source:
+
+```html
+<Teleport v-if="dialogOpen && teleportTarget" :to="teleportTarget">
+  <!-- renders inside SH3D's name-and-price-panel grid -->
+</Teleport>
+```
+
+Fields shown conditionally:
+- `store.isSmartDevice` → HA Entity ID input + Effect Radius slider
+- `store.isSwitchDevice` → Controls Entity ID input + Switch Type select
+
+#### 3. Pinia store — `furnitureStore.ts`
+Single source of truth for the currently-selected furniture piece's HA properties:
+
+| Ref | Type | Property key |
+|-----|------|-------------|
+| `haEntityId` | `string` | `'haEntityId'` |
+| `effectRadius` | `number` | `'effectRadius'` |
+| `controlsEntityId` | `string` | `'controlsEntityId'` |
+| `switchType` | `'pressure' \| 'fixed'` | `'switchType'` |
+
+`loadFromController(controller)` reads all properties from the SH3D furniture object on dialog open. `commitProperty(key, value)` writes immediately via `setCustomProperty()` and queues in `pendingProps`. `flushPendingProps()` re-writes on dialog close.
+
+#### 4. Property persistence — `furnitureService.ts`
+Wraps the SH3D furniture property API:
+```typescript
+controller.getProperty(key)       // read
+controller.setProperty(key, value) // write (null clears)
+```
+`getFurnitureController()` → `window.application.getHomes()[0].getSelectedItems()[0]`
+
+#### 5. Device detection — `deviceDetection.ts`
+`resolveCatalogId(furniture)` tries 5 ways to get the catalog ID (defensive, SH3D API varies):
+1. `furniture.getCatalogId?.()`
+2. `furniture.properties.catalogId`
+3. `furniture.getProperty?.('catalogId')`
+4. `furniture.getAdditionalProperties?.().entries` scan
+5. `furniture.getCatalogPieceOfFurniture?.().getId?.()`
+
+`isSmartDeviceFurniture(f)` → `catalogId.startsWith('ha_')` OR `creator === 'HA'` OR category contains `'smart'` OR IoT keyword in name/id.
+
+`isSwitchFurniture(f)` → `catalogId.startsWith('ha_switch')` OR `catalogId === 'ha_light_dimmer'`.
+
+### Build & dev commands
+```bash
+cd www-vue/
+
+npm run dev      # Vite dev server
+                 # publicDir = ../sweethome3d/www (serves SH3D files directly)
+                 # Proxies PHP endpoints to localhost:8099
+
+npm run build    # vue-tsc + vite build → dist/
+                 # copyPublicDir: false (don't copy the 300MB SH3D assets)
+```
+
+`VITE_PHP_TARGET` env var overrides the PHP proxy target (default `http://localhost:8099`).
+
+### Adding a new HA field (Vue approach)
+
+This is the canonical way to add new fields to the furniture dialog. Do NOT add HTML to `sweethome3d/www/index.html` anymore.
+
+**Step 1 — Add property ref to `furnitureStore.ts`:**
+```typescript
+const myProp = ref('')
+
+function loadFromController(controller) {
+  // ...existing...
+  myProp.value = getCustomProperty(controller, 'myProp') ?? ''
+}
+function reset() {
+  // ...existing...
+  myProp.value = ''
+}
+// add to return {}
+```
+
+**Step 2 — Add the field to `FurnitureDialogEnhancer.vue`:**
+```html
+<template v-if="store.isSmartDevice">
+  <!-- existing fields... -->
+  <div class="label-cell ha-only">My Field:</div>
+  <div class="ha-only">
+    <input type="text" :value="store.myProp" @change="onMyPropChange" />
+  </div>
+</template>
+```
+Add the handler in `<script setup>`:
+```typescript
+function onMyPropChange(e: Event) {
+  const value = (e.target as HTMLInputElement).value
+  store.myProp = value
+  store.commitProperty('myProp', value)
+}
+```
+Add any CSS to `<style scoped>` — no inline styles.
+
+**Step 3 — Expose in export (if needed):**
+In `sweethome3d/www/lib/unity-export-utils.js`, inside `extractDeviceMetadata()`:
+```javascript
+const myProp = piece.getProperty('myProp')
+if (myProp) deviceData.myProp = myProp
+```
+
+### Type definitions — `sweethome3d.d.ts`
+Ambient global file (no `export {}`). Declares:
+- `interface SH3DFurniture` — `getCatalogId`, `getProperty`, `setProperty`, `getAdditionalProperties`, etc.
+- `interface SH3DApplication` — `getHomes()`
+- `interface Window` — `application`, `homeComponent3D`, `OBJExporter`, `UnityExportUtilities`
+
+Add new SH3D API methods here when you need to call them from TypeScript.
 
 ---
 
@@ -391,150 +560,26 @@ Current smart devices use indices **#101 through #109**. To add a new device, us
 
 ### Adding Custom Inputs to the Furniture Edit Form
 
-The furniture edit dialog is defined as an **HTML template** in `index.html` (id: `home-furniture-dialog-template`, starting at line ~517). Custom HA fields are injected into this template and wired up via inline JS functions.
+> **Use the Vue 3 approach** described in the [Vue 3 Frontend Overlay](#vue-3-frontend-overlay-www-vue) section above. The legacy inline-JS approach below is kept for reference but should not be extended further.
 
-#### Architecture
+#### Current Fields (Vue, `FurnitureDialogEnhancer.vue`)
 
-```
-index.html
-  ├── HTML Template (div#home-furniture-dialog-template)
-  │     Contains form fields with data-name attributes
-  │     Custom fields hidden by default (style="display:none")
-  │
-  └── Inline <script> (HA Integration IIFE, ~1000 lines)
-        ├── setupHAEntityField() — shows/hides fields, reads/writes values
-        ├── getHAEntityId(furniture) — reads property from furniture object
-        ├── setHAEntityId(controller, value) — writes property to furniture
-        ├── isSmartDeviceFurniture(furniture) — determines visibility
-        └── initHAEntityField() — polls every 500ms for dialog open
-```
+| Field | Condition | Store ref | Property key |
+|-------|-----------|-----------|-------------|
+| HA Entity ID | `isSmartDevice` | `haEntityId` | `'haEntityId'` |
+| Effect Radius slider | `isSmartDevice` | `effectRadius` | `'effectRadius'` |
+| Controls Entity ID | `isSwitchDevice` | `controlsEntityId` | `'controlsEntityId'` |
+| Switch Type select | `isSwitchDevice` | `switchType` | `'switchType'` |
 
-#### Step 1: Add HTML to the Dialog Template
+#### Legacy inline-JS approach (reference only)
 
-Find the `home-furniture-dialog-template` div (line ~517) and add your field inside the `name-and-price-panel` grid. Use `data-name` attributes for JS access and start hidden:
+The original HA fields were added directly in `sweethome3d/www/index.html` using:
+- HTML injected into `div[data-name="name-and-price-panel"]` inside `div#home-furniture-dialog-template`
+- Fields hidden by default (`display:none`), shown by inline JS `setupHAEntityField()`
+- Dialog detection via `setInterval` polling every 500ms (replaced by MutationObserver in Vue)
+- Property persistence via `controller.setProperty()` / `controller.getProperty()`
 
-```html
-<!-- Inside div[data-name="name-and-price-panel"] in index.html -->
-
-<!-- YOUR NEW FIELD -->
-<div class="label-cell ha-only" data-name="my-field-label" style="display:none;">
-  <div>🔌 My Custom Field:</div>
-</div>
-<div class="ha-only" data-name="my-field-container" style="display:none;">
-  <input name="my-field-input" size="50" type="text"
-    placeholder="Enter value here" />
-  <div style="font-size: 0.85em; color: #666; margin-top: 0.3em;">
-    Description of what this field does
-  </div>
-</div>
-```
-
-For a slider/range input (like the existing effect radius):
-```html
-<div data-name="my-slider-container" style="display:none; margin-top: 15px;">
-  <div style="color: #666; font-size: 12px; margin-bottom: 5px; font-weight: 500;">
-    📊 My Slider Label
-  </div>
-  <div style="display: flex; align-items: center; gap: 10px;">
-    <input data-name="my-slider" type="range"
-      min="0" max="100" step="1" value="50"
-      style="flex: 1; cursor: pointer; height: 6px;" />
-    <span data-name="my-slider-value"
-      style="min-width: 50px; text-align: right; font-family: monospace; font-weight: bold;">
-      50
-    </span>
-  </div>
-</div>
-```
-
-#### Step 2: Wire Up Visibility and Persistence in JS
-
-In the inline `<script>` section (inside the HA Integration IIFE), modify `setupHAEntityField()` to show/hide your field and read/write values. The pattern is:
-
-```javascript
-function setupHAEntityField() {
-  // ... existing code to find elements ...
-  
-  // Find YOUR new elements
-  const myFieldInput = document.querySelector('input[name="my-field-input"]');
-  const myFieldLabel = document.querySelector('[data-name="my-field-label"]');
-  const myFieldContainer = document.querySelector('[data-name="my-field-container"]');
-  
-  if (!myFieldInput) return;
-  
-  // Get the furniture controller (selected furniture piece)
-  const controller = getFurnitureController();
-  if (!controller || !isSmartDeviceFurniture(controller)) {
-    // Hide for non-smart devices
-    myFieldLabel.style.display = 'none';
-    myFieldContainer.style.display = 'none';
-    return;
-  }
-  
-  // Show field
-  myFieldLabel.style.display = '';
-  myFieldContainer.style.display = '';
-  
-  // Read current value from furniture properties
-  const currentValue = controller.getProperty('myPropertyName');
-  myFieldInput.value = currentValue || '';
-  
-  // Save on change
-  myFieldInput.addEventListener('change', function() {
-    setCustomProperty(controller, 'myPropertyName', myFieldInput.value.trim());
-  });
-}
-```
-
-#### Step 3: Property Persistence (How Values Are Saved)
-
-SweetHome3D furniture pieces have a property system accessed via:
-
-```javascript
-// Read a property
-const value = furniture.getProperty('myPropertyName');
-
-// Write a property (simple approach)
-furniture.setProperty('myPropertyName', newValue);
-
-// Write via additionalProperties (used for dialog-based editing)
-let props = controller.getAdditionalProperties();
-if (!props) props = { entries: [] };
-props.entries.push({
-  key: 'myPropertyName',
-  value: newValue,
-  getKey: function() { return this.key; },
-  getValue: function() { return this.value; }
-});
-controller.setAdditionalProperties(props);
-```
-
-#### Step 4: Read Custom Properties During Export
-
-In `unity-export-utils.js`, update `extractDeviceMetadata()` to include your new property in the exported JSON:
-
-```javascript
-// Inside extractDeviceMetadata() where device data is built:
-const myValue = piece.getProperty('myPropertyName');
-if (myValue) {
-  deviceData.myPropertyName = myValue;
-}
-```
-
-#### Existing Custom Fields Reference
-
-| Field | HTML data-name | Property Key | Location |
-|-------|---------------|-------------|----------|
-| HA Entity ID | `ha-entity-label`, `ha-entity-input-container` | `haEntityId` | index.html line ~540 |
-| Effect Radius | `ha-effect-radius-container` | (via slider data-name) | index.html line ~552 |
-
-Key JS functions for reference:
-- `setupHAEntityField()` — visibility + value binding (line ~2038)
-- `getHAEntityId(furniture)` — reads `haEntityId` property (line ~2212)
-- `setHAEntityId(controller, value)` — writes via `additionalProperties` (line ~2240)
-- `isSmartDeviceFurniture(furniture)` — detection logic (line ~2126)
-- `getFurnitureController()` — gets currently selected furniture (line ~2180)
-- `initHAEntityField()` — polls for dialog open every 500ms (line ~2017)
+Do **not** add new fields to `index.html`. The Vue overlay (`www-vue/`) handles all HA UI.
 
 ---
 
@@ -584,9 +629,14 @@ docker-compose up --build
 | `sweethome3d.min.js` is 2.5MB | Do NOT modify; all customizations via separate scripts |
 | Furniture model loading is async | `exportModelFromURL()` uses JSZip to load from URLs |
 | Entity ID persistence | Uses `furniture.setProperty()` / `getProperty()` API |
-| Effect radius renderer | Commented out in index.html (`effect-radius-renderer.js`), was not working |
+| Effect radius renderer | `effect-radius-renderer.js` removed — was commented out and non-functional |
 | Coordinate units | SH3D internal = cm; JSON export = meters; OBJ geometry = cm |
 | Material color parsing | Historical bug with `flyellow` appearing pink — fixed via `objDefaults.js` |
+| Vue dialog detection guard | `isLiveDialog()` checks `el.closest('.dialog-template') === null` — SH3D keeps a hidden template copy in the DOM at all times; without this guard the observer fires twice |
+| Vue `<Teleport>` target | Teleports into `[data-name="name-and-price-panel"]` — a CSS grid inside the live dialog. Vue fields inherit the grid layout, so they appear as natural rows |
+| `furnitureStore.flushPendingProps()` | Writes all pending properties again on dialog close (belt-and-suspenders). This means each property write happens twice: once on `@change`, once on close |
+| Vue overlay `pointer-events` | `#vue-app` is `pointer-events: none`. Only components that need interaction set `pointer-events: auto` on their root elements. Without this, Vue blocks all SH3D mouse input |
+| `vite build` copies no public assets | `copyPublicDir: false` — the SH3D `www/` files are served separately by nginx; the Vite build only outputs the Vue bundle |
 
 ---
 
@@ -599,4 +649,4 @@ This app works with the **Unity Smart Home Visualizer**:
 
 ---
 
-*Last updated: February 17, 2026*
+*Last updated: March 21, 2026*

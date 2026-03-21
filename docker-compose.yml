@@ -6,8 +6,8 @@ version: '3.8'
 services:
   sweethome3d:
     build:
-      context: ./sweethome3d
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: sweethome3d/Dockerfile
       args:
         BUILD_FROM: alpine:3.20
     ports:
