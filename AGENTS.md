@@ -121,7 +121,7 @@ ha-sweethome3d/
 | `www/lib/unity-export-utils.js` | 971 | Complete Unity export: device JSON + rooms + walls + C# script |
 | `www/lib/obj-exporter-integration.js` | 253 | Adds export button + keyboard shortcut to SweetHome3D UI |
 | `www/lib/objDefaults.js` | 903 | 100+ default MTL material definitions (ambient, diffuse, specular) |
-| `model-create.sh` | ~8K | Script to generate IoT device 3D models for the furniture catalog |
+| `.claude/skills/new-ha-device/scripts/create_ha_device.py` | ~550 | Python script to add/replace HA device models (cube or Meshy.ai OBJ) |
 
 ### Core SweetHome3D Files (DO NOT MODIFY)
 | File | Purpose |
@@ -422,139 +422,144 @@ class UnityExportUtilities {
 
 ### Adding a New 3D Model / IoT Device Type
 
-Adding a new device requires **3 artifacts** (model ZIP, icon, catalog entry) plus optional export updates.
-
-#### Step 1: Create the 3D Model
-
-Each device model is a **ZIP** containing an OBJ file + MTL file. The simplest approach is a colored cube:
-
-**Option A: Use `model-create.sh`** (recommended for batch creation)
-```bash
-# Run from ha-sweethome3d/ directory
-cd sweethome3d
-bash model-create.sh
-# Creates 9 device models + icons in www/lib/resources/models/
-```
-
-The script's `create_model` function accepts: `name width height depth r g b material_name`
-
-**Option B: Create manually**
-
-1. Create a directory `temp-{name}/` with two files:
-
-```
-# {name}.obj
-mtllib {name}.mtl
-o {MaterialName}
-v -2.5 0.0 -2.5
-v 2.5 0.0 -2.5
-v 2.5 0.0 2.5
-v -2.5 0.0 2.5
-v -2.5 5.0 -2.5
-v 2.5 5.0 -2.5
-v 2.5 5.0 2.5
-v -2.5 5.0 2.5
-usemtl {MaterialName}
-f 1 2 6 5
-f 2 3 7 6
-f 3 4 8 7
-f 4 1 5 8
-f 1 4 3 2
-f 5 6 7 8
-```
-
-```
-# {name}.mtl
-newmtl {MaterialName}
-Ka 0.3 0.69 0.31
-Kd 0.3 0.69 0.31
-Ks 0.5 0.5 0.5
-Ns 32
-d 1.0
-illum 2
-```
-
-2. ZIP the directory: `zip -r {name}.zip temp-{name}/`
-3. Place in `www/lib/resources/models/{name}.zip`
-
-**Option C: Use a real 3D model**
-
-You can use any OBJ model. Just ensure:
-- OBJ + MTL files are inside a ZIP
-- Dimensions are in centimeters
-- The model path in the catalog matches the structure inside the ZIP
-
-#### Step 2: Create an Icon
-
-Create a 64×64 PNG icon for the furniture catalog:
+**Use the Python automation script** — it handles model ZIP, icon, and catalog in one command:
 
 ```bash
-# Using ImageMagick
-magick -size 64x64 xc:"#4CAF50" -gravity center -pointsize 24 \
-  -fill white -font Arial-Bold -annotate +0+0 "E" ha-my-device.png
+# From ha-sweethome3d/ directory:
+python ".claude/skills/new-ha-device/scripts/create_ha_device.py" \
+  --name ha-my-device \
+  --display-name "My Device" \
+  --catalog-id ha_my_device \
+  --category "Smart Sensors" \
+  --color "80,200,120" \
+  --width 5 --depth 5 --height 8 \
+  --elevation 150 \
+  --project-root ".."
 ```
 
-Place in `www/lib/resources/models/ha-my-device.png`
+See `.claude/skills/new-ha-device/SKILL.md` for full parameter reference.
 
-#### Step 3: Register in the Furniture Catalog
+#### Option A: Colored cube (no 3D model available yet)
 
-Edit `www/lib/resources/DefaultFurnitureCatalog.json`. The catalog uses a **flat key-value format** with **numbered indices**. Each piece of furniture has properties suffixed with `#N` where N is its unique index.
+Use `--color "R,G,B"`. Generates an axis-aligned box with flat MTL color. Fast, no dependencies beyond Python stdlib.
 
-Current smart devices use indices **#101 through #109**. To add a new device, use the next available index (e.g., `#110`):
+#### Option B: Real 3D model from Meshy.ai or downloaded OBJ
+
+Use `--external-obj PATH_TO_FOLDER`. The folder must contain `*.obj` (+ optionally `*.mtl` and `*.png`). The script uses `trimesh` to:
+1. Decimate the mesh to ~`--target-faces` faces (default 2000)
+2. Rescale to fit within the given `--width`×`--depth`×`--height` box
+3. Sample the dominant color from the PNG for the flat MTL color and icon
+4. Package into ZIP and update catalog
+
+**Dependencies (one-time install):**
+```bash
+pip install trimesh fast-simplification
+```
+
+**Meshy.ai prompts for each device type:**
+| Device | Suggested prompt |
+|--------|-----------------|
+| Temp/humidity sensor | `"Sonoff SNZB-02 temperature and humidity sensor, small white square IoT device, realistic"` |
+| Motion sensor | `"PIR motion detector sensor, white dome shape, ceiling mount, realistic"` |
+| Smart bulb | `"Philips Hue smart LED bulb, white, realistic"` |
+| Wall switch | `"white wall light switch with single rocker button, realistic"` |
+| Smart plug | `"smart home wall plug adapter with LED indicator, white, realistic"` |
+| Ceiling light | `"round flat ceiling light fixture, white, modern, realistic"` |
+
+> **Dimension tip**: Set `--height` to match the model's dominant axis. A standing sensor needs `--height 8`, a flat disc sensor needs `--height 2`.
+
+#### Current device catalog
+
+| Index | Catalog ID | Name | Model |
+|-------|-----------|------|-------|
+| #101 | `ha_sensor_temperature` | Temperature Sensor | Cube |
+| #102 | `ha_sensor_humidity` | Humidity Sensor | Cube |
+| #104 | `ha_sensor_motion` | Motion Sensor | Cube |
+| #105 | `ha_sensor_light` | Light Sensor | Cube |
+| #106 | `ha_sensor_motion_light` | Motion & Light Sensor | Cube |
+| #107 | `ha_light_bulb` | Smart Light Bulb | Cube |
+| #108 | `ha_light_dimmer` | Smart Dimmer | Cube |
+| #109 | `ha_switch_plug` | Smart Plug | Cube |
+| #110 | `ha_switch_pressure` | Pressure-Sensitive Switch | Cube |
+| #111 | `ha_switch_regular` | Wall Switch | Cube |
+| #112 | `ha_light_ceiling` | Ceiling Light | Cube |
+| #113 | `ha_sensor_temp_humidity` | Temperature & Humidity Sensor | Meshy.ai |
+
+> The index number (#N) is internal to the catalog file and can change when a device is replaced. SweetHome3D matches devices by `catalogId`, not index. Saved home files (.sh3x) reference `catalogId`.
+
+#### Catalog format reference
+
+The catalog uses a flat JSON with numbered suffixes. Each device needs exactly 14 keys:
 
 ```json
-{
-  "model#110": "lib/resources/models/ha-my-device.zip!/temp-ha-my-device/ha-my-device.obj",
-  "catalogId#110": "ha_energy_meter",
-  "name#110": "Energy Meter",
-  "icon#110": "lib/resources/models/ha-my-device.png",
-  "category#110": "Smart Sensors",
-  "width#110": "5",
-  "depth#110": "5",
-  "height#110": "5",
-  "elevation#110": "100",
-  "movable#110": "true",
-  "doorOrWindow#110": "false",
-  "tags#110": "HA, IoT, Sensor, Energy, Power, Smart Home",
-  "creator#110": "HA",
-  "modelSize#110": "1400"
-}
+"model#N":        "lib/resources/models/ha-{name}.zip!/temp-ha-{name}/ha-{name}.obj",
+"catalogId#N":    "ha_{name_underscored}",
+"name#N":         "Display Name",
+"icon#N":         "lib/resources/models/ha-{name}.png",
+"category#N":     "Smart Sensors",
+"width#N":        "5",
+"depth#N":        "5",
+"height#N":       "8",
+"elevation#N":    "150",
+"movable#N":      "true",
+"doorOrWindow#N": "false",
+"tags#N":         "HA, IoT, Smart Home, ...",
+"creator#N":      "HA",
+"modelSize#N":    "<zip byte count>"
 ```
 
-> [!IMPORTANT]
-> - **`catalogId`** MUST start with `ha_` for the device to be detected as a smart device
-> - **`creator`** should be `"HA"` for consistent detection
-> - **`category`** should contain "Smart" (e.g., `Smart Sensors`, `Smart Lights`, `Smart Switches`)
-> - **`model`** path follows pattern: `lib/resources/models/{zip-name}.zip!/temp-{zip-name}/{obj-name}.obj`
-> - **`elevation`** is the default wall height in cm where the device appears (150 = wall-mounted sensor level)
+> **`catalogId`** must start with `ha_` · **`creator`** must be `"HA"` · **`category`** must contain "Smart" · **`modelSize`** must match the actual ZIP byte count
 
-#### Existing Smart Device Catalog Entries
+#### Updating export logic (if new device type)
 
-| Index | Catalog ID | Name | Category |
-|-------|-----------|------|----------|
-| #101 | `ha_sensor_temperature` | Temperature Sensor | Smart Sensors |
-| #102 | `ha_sensor_humidity` | Humidity Sensor | Smart Sensors |
-| #103 | `ha_sensor_temp_humidity` | Temperature & Humidity Sensor | Smart Sensors |
-| #104 | `ha_sensor_motion` | Motion Sensor | Smart Sensors |
-| #105 | `ha_sensor_light` | Light Sensor | Smart Sensors |
-| #106 | `ha_sensor_motion_light` | Motion & Light Sensor | Smart Sensors |
-| #107 | `ha_light_bulb` | Smart Light Bulb | Smart Lights |
-| #108 | `ha_light_dimmer` | Smart Dimmer | Smart Lights |
-| #109 | `ha_switch_plug` | Smart Plug | Smart Switches |
-
-#### Step 4: Update Export Logic (if needed)
-
-- `UnityExportUtilities.isIoTDevice()` — add detection if your catalog ID doesn't follow `ha_` convention
 - `UnityExportUtilities.getDeviceType()` — classify the new device type for Unity
-- `UnityExportUtilities.getParticleSettings()` — configure particle visualization if applicable
+- `UnityExportUtilities.getParticleSettings()` — configure particle visualization
+- Both can be patched automatically via `--device-type` and `--particle-color` script args
 
-#### Step 5: Unity Side
+#### Unity side
 
 - Add prefab to the project
-- Update `SceneAutoSetup` inspector to assign prefabs to the correct slots:
-  - `lightPrefab`: For ceiling lamps/bulbs (e.g., `ha_light_bulb`)
-  - `lightSwitchPrefab`: For wall switches/dimmers (e.g., `ha_light_dimmer`, `ha_switch_plug`)
-- The script will automatically add `LightEntityConsumer` and a `Light` component (if missing) to these objects.
+- Update `SceneAutoSetup` inspector:
+  - `lightPrefab`: for bulbs/ceiling lamps (`ha_light_bulb`, `ha_light_ceiling`)
+  - `lightSwitchPrefab`: for wall switches/dimmers (`ha_light_dimmer`, `ha_switch_plug`)
+
+---
+
+### Replacing an Existing Device Model
+
+Use this when upgrading a cube device to a real 3D model (e.g., a Meshy.ai export).
+
+**Step 1 — Delete the old ZIP:**
+```bash
+rm sweethome3d/www/lib/resources/models/ha-{name}.zip
+```
+
+**Step 2 — Remove the old catalog entries** (all 14 keys for that device's index):
+```python
+python -c "
+import json, re
+path = 'sweethome3d/www/lib/resources/DefaultFurnitureCatalog.json'
+with open(path, 'r', encoding='utf-8') as f:
+    cat = json.load(f)
+target = 'ha_sensor_temp_humidity'  # ← change to your catalogId
+n = next((re.search(r'#(\d+)\$', k).group(1) for k, v in cat.items()
+          if k.startswith('catalogId#') and v == target), None)
+if n:
+    removed = [k for k in list(cat) if k.endswith(f'#{n}')]
+    for k in removed: del cat[k]
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        json.dump(cat, f, indent=2, ensure_ascii=False); f.write('\n')
+    print(f'Removed #{n}: {len(removed)} keys')
+else:
+    print('catalogId not found')
+"
+```
+
+**Step 3 — Re-run the script** with the same `--name` and `--catalog-id` but `--external-obj` pointing to the new model folder. The script assigns the next free index automatically.
+
+> The PNG icon file is rewritten in-place (same path) — no need to delete it first.
+
+> **Why the index changes**: The script never overwrites an existing ZIP. Deleting the ZIP frees the name for reuse, but the catalog index (#N) advances to the next available number. This is harmless — SweetHome3D always looks up devices by `catalogId`.
 
 ---
 
@@ -649,4 +654,4 @@ This app works with the **Unity Smart Home Visualizer**:
 
 ---
 
-*Last updated: March 21, 2026*
+*Last updated: March 22, 2026*
