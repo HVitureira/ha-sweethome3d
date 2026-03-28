@@ -28,6 +28,38 @@ export default defineConfig({
         })
       },
     },
+    {
+      // Serve the pre-built Unity WebGL app from /unity-visualizer/ in dev
+      name: 'unity-visualizer-static',
+      configureServer(server) {
+        const unityBuildDir = path.resolve(__dirname, '../unity-build')
+        server.middlewares.use((req, res, next) => {
+          const urlPath = (req.url ?? '').split('?')[0]
+          if (!urlPath.startsWith('/unity-visualizer/')) return next()
+
+          const relativePath = urlPath.slice('/unity-visualizer/'.length)
+          const filePath = path.join(unityBuildDir, relativePath)
+
+          if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) return next()
+
+          const ext = path.extname(filePath).toLowerCase()
+          const mimeMap: Record<string, string> = {
+            '.html': 'text/html',
+            '.js':   'application/javascript',
+            '.css':  'text/css',
+            '.wasm': 'application/wasm',
+            '.json': 'application/json',
+            '.png':  'image/png',
+            '.ico':  'image/x-icon',
+            '.svg':  'image/svg+xml',
+          }
+          res.setHeader('Content-Type', mimeMap[ext] ?? 'application/octet-stream')
+          // Unity WebGL uses Brotli pre-compressed files (.wasm.br, .js.br, .data.br)
+          if (ext === '.br') res.setHeader('Content-Encoding', 'br')
+          fs.createReadStream(filePath).pipe(res)
+        })
+      },
+    },
   ],
   publicDir: '../sweethome3d/www',
   resolve: {

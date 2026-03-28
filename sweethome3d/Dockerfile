@@ -48,6 +48,9 @@ COPY sweethome3d/www/ /var/www/html/
 # Overlay Vue build on top: replaces index.html and adds assets/
 COPY --from=vue-builder /build/dist/ /var/www/html/
 
+# Copy Unity WebGL build (pre-built, placed at ha-sweethome3d/unity-build/)
+COPY unity-build/ /var/www/html/unity-visualizer/
+
 # Copy startup script
 COPY sweethome3d/start.sh /start.sh
 
