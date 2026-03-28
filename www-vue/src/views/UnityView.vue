@@ -42,9 +42,10 @@ function sendConfigToIframe() {
   )
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await settingsStore.configReady
   writeConfigToStorage()
-  iframeSrc.value = '/unity-visualizer/index.html'
+  iframeSrc.value = 'unity-visualizer/index.html'
   iframeRef.value?.addEventListener('load', () => {
     hasLoaded.value = true
   })

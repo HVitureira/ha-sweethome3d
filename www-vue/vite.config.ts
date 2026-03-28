@@ -7,6 +7,7 @@ import * as path from 'node:path'
 const phpTarget = process.env.VITE_PHP_TARGET ?? 'http://localhost:8099'
 
 export default defineConfig({
+  base: './',
   plugins: [
     vue(),
     {

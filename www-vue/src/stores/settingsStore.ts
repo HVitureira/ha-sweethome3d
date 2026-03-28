@@ -4,7 +4,7 @@ import { ref, watch } from 'vue'
 const STORAGE_KEY = 'ha-smart-home-settings'
 
 export interface SmartHomeSettings {
-  // ── Home Assistant ──────────────────────────────
+  // ── Home Assistant (from addon options / ha-config.json) ──
   homeAssistantAddress: string
   homeAssistantAccessToken: string
   useSSL: boolean
@@ -17,7 +17,7 @@ export interface SmartHomeSettings {
   mqttPassword: string
   useWebSockets: boolean
 
-  // ── Visualization ────────────────────────────────
+  // ── Visualization (user-configurable in Settings tab) ──
   minTemp: number
   maxTemp: number
   interpolationPower: number
@@ -25,7 +25,7 @@ export interface SmartHomeSettings {
   maxParticles: number
   optimizeForWebGL: boolean
 
-  // ── Connection ───────────────────────────────────
+  // ── Connection tuning (user-configurable in Settings tab) ──
   reconnectDelay: number
   maxReconnectAttempts: number
   connectionTimeout: number
@@ -62,6 +62,14 @@ const DEFAULTS: SmartHomeSettings = {
   forceHomeAssistantInEditor: false,
 }
 
+interface AddonConfig {
+  homeAssistantAddress?: string
+  homeAssistantAccessToken?: string
+  useSSL?: boolean
+  trackedEntities?: string[]
+  source?: string
+}
+
 function loadFromStorage(): SmartHomeSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -74,11 +82,62 @@ function loadFromStorage(): SmartHomeSettings {
 
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<SmartHomeSettings>(loadFromStorage())
+  const addonConfigLoaded = ref(false)
+
+  let resolveConfigReady: () => void
+  const configReady = new Promise<void>((resolve) => {
+    resolveConfigReady = resolve
+  })
 
   // Auto-persist on every change
   watch(settings, (val) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(val))
   }, { deep: true })
+
+  async function initFromAddonConfig(): Promise<void> {
+    try {
+      const resp = await fetch('ha-config.json')
+      if (!resp.ok) {
+        resolveConfigReady!()
+        return
+      }
+      const addon: AddonConfig = await resp.json()
+      if (addon.source !== 'addon-options') {
+        resolveConfigReady!()
+        return
+      }
+
+      const s = settings.value
+
+      // Connection fields always come from addon config (overwrite localStorage)
+      if (addon.homeAssistantAddress) {
+        s.homeAssistantAddress = addon.homeAssistantAddress
+      }
+      if (addon.homeAssistantAccessToken) {
+        s.homeAssistantAccessToken = addon.homeAssistantAccessToken
+      }
+      if (addon.useSSL !== undefined) {
+        s.useSSL = addon.useSSL
+      }
+      if (addon.trackedEntities && addon.trackedEntities.length > 0) {
+        s.trackedEntities = addon.trackedEntities
+      }
+
+      // Auto-detect HA address when running in ingress and not configured
+      if (!s.homeAssistantAddress && window.location.pathname.includes('/api/hassio_ingress/')) {
+        s.homeAssistantAddress = window.location.host
+        s.useSSL = window.location.protocol === 'https:'
+      }
+
+      addonConfigLoaded.value = true
+    } catch {
+      // Standalone or dev mode — no ha-config.json, that's fine
+    }
+    resolveConfigReady!()
+  }
+
+  // Start loading addon config immediately
+  initFromAddonConfig()
 
   function update(patch: Partial<SmartHomeSettings>): void {
     settings.value = { ...settings.value, ...patch }
@@ -116,5 +175,5 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  return { settings, update, reset, toUnityConfig }
+  return { settings, update, reset, toUnityConfig, addonConfigLoaded, configReady }
 })
