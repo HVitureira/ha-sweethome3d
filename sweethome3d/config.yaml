@@ -17,11 +17,20 @@ options:
   php_memory_limit: "256M"
   php_upload_max_filesize: "50M"
   php_post_max_size: "50M"
+  homeassistant_address: ""
+  homeassistant_token: ""
+  use_ssl: true
+  tracked_entities: []
 schema:
   php_max_execution_time: int(30,3600)?
   php_memory_limit: str?
   php_upload_max_filesize: str?
   php_post_max_size: str?
+  homeassistant_address: str?
+  homeassistant_token: password?
+  use_ssl: bool?
+  tracked_entities:
+    - str
 ports:
   8099/tcp: 8099
 ports_description:
@@ -33,9 +42,9 @@ webui: http://[HOST]:[PORT:8099]
 ingress: true
 ingress_port: 8099
 ingress_stream: false
-hassio_api: false
+hassio_api: true
 hassio_role: default
-homeassistant_api: false
+homeassistant_api: true
 auth_api: false
 full_access: false
 apparmor: false

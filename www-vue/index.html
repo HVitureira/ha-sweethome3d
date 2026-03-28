@@ -66,6 +66,17 @@
       touch-action: none;
     }
 
+    /* Tab bar integration: push SweetHome3D below the 40px tab bar.
+       Makes #home-pane a positioning context so all its position:absolute
+       children compute heights relative to it (viewport minus 40px). */
+    #home-pane {
+      position: absolute;
+      top: 40px;
+      left: 0;
+      right: 0;
+      bottom: 0;
+    }
+
     #home-plan::selection {
       background: #0042E0;
     }
