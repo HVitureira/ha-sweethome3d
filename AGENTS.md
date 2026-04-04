@@ -17,6 +17,9 @@ This document provides comprehensive context for LLM agents working on this modi
 - OBJ + MTL + textures export to ZIP for Unity 3D model loading
 - Device metadata JSON export (positions, entity IDs, rooms, walls)
 - Auto-generated Unity C# import script
+- **Tabbed UI**: Floor Plan tab (SweetHome3D editor), 3D Visualizer tab (Unity WebGL iframe), Settings tab (HA credentials + viz params)
+- **Settings panel**: HA server address, long-lived access token, tracked entities, visualization parameters — all persisted in `localStorage`
+- **Unity visualizer**: Embedded as iframe at `/unity-visualizer/`; receives config from `localStorage` on load and via `postMessage` on settings changes
 - Runs as Docker container (nginx + PHP-FPM, port 8099)
 - Integrates with Home Assistant as an Ingress add-on
 
@@ -30,17 +33,44 @@ This document provides comprehensive context for LLM agents working on this modi
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
+│  Browser                                                         │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Tab Bar (Vue, position:fixed, top:0, z-index:2000)     │    │
+│  │  [ Floor Plan ]  [ 3D Visualizer ]  [ ⚙ Settings ]     │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Tab A (#home-pane, position:absolute, top:40px→)       │    │
+│  │    SweetHome3D JS floor plan editor                     │    │
+│  │    Vue overlay: FurnitureDialogEnhancer + ExportButtons │    │
+│  │                                                         │    │
+│  │  Tab B (UnityView.vue, position:fixed, top:40px→)       │    │
+│  │    <iframe src="/unity-visualizer/index.html">          │    │
+│  │    Unity WebGL canvas (full viewport below tab bar)     │    │
+│  │                                                         │    │
+│  │  Tab C (SettingsView.vue, position:fixed, top:40px→)    │    │
+│  │    HA address, long-lived token, viz params, Save       │    │
+│  └─────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
 │               Home Assistant Add-on Container                    │
 │  Docker: Alpine + nginx + PHP-FPM (port 8099)                   │
 ├─────────────────────────────────────────────────────────────────┤
 │  nginx → serves static files from /var/www/html/                │
 │  PHP-FPM → handles data save/load to /var/www/html/data/        │
 ├─────────────────────────────────────────────────────────────────┤
-│  index.html (2784 lines)                                         │
+│  index.html (Vue Vite entry)                                     │
 │  ├── SweetHome3D core JS (sweethome3d.min.js + dependencies)    │
 │  ├── Custom Export Scripts (4 JS files)                          │
 │  ├── HA Integration Script (inline ~1000 lines)                 │
-│  └── Custom HTML: HA entity field, effect radius slider          │
+│  ├── Vue 3 app (#vue-app overlay, 0px, position:fixed)          │
+│  │     ├── TabBar.vue (position:fixed, z-index:2000)            │
+│  │     ├── RouterView + UnityView (always mounted, v-show)      │
+│  │     ├── FurnitureDialogEnhancer (Teleport into SH3D dialog)  │
+│  │     └── ExportButtons (only on Floor Plan tab)               │
+│  └── /unity-visualizer/ → Unity WebGL iframe content            │
 ├─────────────────────────────────────────────────────────────────┤
 │  Export Pipeline                                                 │
 │  ├── OBJExporter.js → OBJ/MTL geometry + texture extraction     │
@@ -65,7 +95,7 @@ ha-sweethome3d/
 │   ├── model-create.sh             # IoT furniture model generator
 │   ├── rootfs/                     # Container filesystem overlays
 │   │   └── etc/
-│   │       ├── nginx/              # nginx config
+│   │       ├── nginx/              # nginx config (has /unity-visualizer/ Brotli block)
 │   │       ├── php82/              # PHP-FPM config
 │   │       ├── cont-init.d/        # s6-overlay init scripts
 │   │       └── services.d/         # s6-overlay service definitions
@@ -82,12 +112,18 @@ ha-sweethome3d/
 │   └── README.md                   # Add-on specific readme
 ├── www-vue/                        # Vue 3 TypeScript overlay app (see section below)
 │   ├── index.html                  # Vite entry — loads SH3D scripts + mounts #vue-app
-│   ├── vite.config.ts              # publicDir → ../sweethome3d/www; PHP proxy
+│   ├── vite.config.ts              # publicDir → ../sweethome3d/www; sh3d-dev-backend middleware (no Docker needed); unity-visualizer-static plugin
 │   ├── tsconfig.json               # TypeScript project config (strict)
-│   ├── package.json                # pinia, vue (no vue-router)
+│   ├── package.json                # pinia, vue, vue-router
 │   └── src/
-│       ├── main.ts                 # createApp → mounts to #vue-app
-│       ├── App.vue                 # Root: renders ExportButtons + FurnitureDialogEnhancer
+│       ├── main.ts                 # createApp → .use(pinia).use(router).mount('#vue-app')
+│       ├── App.vue                 # Root: TabBar + RouterView + UnityView(v-show) + route watcher
+│       ├── router/
+│       │   └── index.ts            # Vue Router hash history: /, /visualizer, /settings
+│       ├── views/
+│       │   ├── FloorPlanView.vue   # Empty placeholder (SH3D shown via #home-pane DOM toggle)
+│       │   ├── UnityView.vue       # Full-viewport iframe to /unity-visualizer/index.html
+│       │   └── SettingsView.vue    # HA credentials + visualization params form
 │       ├── types/
 │       │   └── sweethome3d.d.ts    # Ambient globals: SH3DFurniture, SH3DApplication, window.*
 │       ├── utils/
@@ -95,16 +131,27 @@ ha-sweethome3d/
 │       ├── services/
 │       │   └── furnitureService.ts # Thin wrappers: getFurnitureController, get/setCustomProperty
 │       ├── stores/
-│       │   └── furnitureStore.ts   # Pinia store: active controller + all HA property refs
+│       │   ├── furnitureStore.ts   # Pinia store: active controller + all HA property refs
+│       │   └── settingsStore.ts    # Pinia store: HA settings, auto-persisted to localStorage
 │       ├── composables/
 │       │   └── useFurnitureDialog.ts # MutationObserver: detects dialog open/close
 │       └── components/
 │           ├── ExportButtons.vue   # Floating export buttons (Ctrl+E / Ctrl+Shift+E)
+│           ├── layout/
+│           │   └── TabBar.vue      # 40px fixed tab bar (Floor Plan / 3D Visualizer / Settings)
 │           └── dialogs/
 │               └── FurnitureDialogEnhancer.vue  # Teleport: injects HA fields into live dialog
+├── unity-build/                    # Pre-built Unity WebGL output (gitignored except .gitkeep)
+│   ├── .gitkeep                    # Keeps dir in git; actual build files are gitignored
+│   ├── index.html                  # Unity entry point (reads window.smartHomeConfig from LS)
+│   ├── Build/                      # WebAssembly + framework (Brotli compressed)
+│   ├── TemplateData/               # style.css, favicon.ico
+│   └── StreamingAssets/            # smart-viz-files/ (exported home data, overwritten on export)
 ├── docker-compose.yml              # Local dev compose file
 ├── README.md                       # Repository readme
 ├── AGENTS.md                       # This file
+├── INTEGRATION_PLAN.md             # Full technical plan for the tab integration
+├── REPO_SETUP.md                   # Repository setup guide + CI/CD recommendations
 ├── test-data/                      # Test data directory
 └── test-config                     # Test config file
 ```
@@ -136,7 +183,7 @@ ha-sweethome3d/
 
 ## Vue 3 Frontend Overlay (`www-vue/`)
 
-The `www-vue/` directory contains a **Vue 3 + TypeScript app** that overlays the SweetHome3D canvas. It adds HA-specific UI (furniture dialog fields, export buttons) without touching the original SH3D JS source.
+The `www-vue/` directory contains a **Vue 3 + TypeScript + Vue Router app** that overlays the SweetHome3D canvas. It adds a three-tab navigation system, a Unity WebGL visualizer iframe, a settings panel, and HA-specific UI (furniture dialog fields, export buttons) without touching the original SH3D JS source.
 
 ### How the overlay works
 
@@ -145,11 +192,121 @@ www-vue/index.html
   ├── <script> tags loading SH3D globals (sweethome3d.min.js, objExporter.js, etc.)
   │     These run first, creating window.application, window.homeComponent3D, etc.
   └── <div id="vue-app">   ← Vue mounts here
-        position: fixed; inset: 0; z-index: 1000; pointer-events: none
-        (transparent overlay; individual components opt into pointer-events: auto)
+        position: fixed; width: 0; height: 0; z-index: 1000; pointer-events: none
+        (zero-size container; individual components use position:fixed to escape it)
 ```
 
-The overlay is **invisible by default**. Only interactive components (export buttons, injected dialog fields) set `pointer-events: auto`.
+The `#vue-app` container is **zero-size and non-interactive by default**. Child views (TabBar, UnityView, SettingsView) use `position: fixed` to escape the zero-size container and take over the viewport. `pointer-events: all` is set on each interactive view.
+
+### Tab routing
+
+Vue Router is configured with **hash history** (`createWebHashHistory`). This means:
+- URLs look like `http://host/#/`, `http://host/#/visualizer`, `http://host/#/settings`
+- The server always receives just `/` — no nginx rewrite rules needed
+- All PHP endpoints (`/readData.php`, etc.) are completely unaffected
+
+| Route | Component | Behavior |
+|-------|-----------|----------|
+| `#/` | `FloorPlanView.vue` | Shows `#home-pane` (SweetHome3D DOM) |
+| `#/visualizer` | `UnityView.vue` | Shows Unity iframe (always mounted via v-show in App.vue, not routed) |
+| `#/settings` | `SettingsView.vue` | Shows settings form |
+
+### SweetHome3D DOM toggle
+
+SweetHome3D renders into `#home-pane` — a DOM node owned by vanilla JS, not Vue. Visibility is toggled via a route watcher in `App.vue` using `visibility: hidden` + `position: absolute` (NOT `display: none`, which collapses dimensions and breaks SweetHome3D's splitter layout):
+
+```typescript
+watch(() => route.path, (path) => {
+  const pane = document.getElementById('home-pane')
+  if (!pane) return
+  if (path === '/') {
+    pane.style.visibility = ''
+    pane.style.position = ''
+    pane.style.pointerEvents = ''
+    requestAnimationFrame(() => window.dispatchEvent(new Event('resize')))
+  } else {
+    pane.style.visibility = 'hidden'
+    pane.style.position = 'absolute'
+    pane.style.pointerEvents = 'none'
+  }
+}, { immediate: true })
+```
+
+A `resize` event is dispatched when re-showing so SweetHome3D recalculates its splitter/canvas layout.
+
+`#home-pane` has `position: absolute; top: 40px; left: 0; right: 0; bottom: 0` (added via `index.html` CSS). This makes `#home-pane` a positioning context so all its `position: absolute` children compute `100%` heights relative to it (viewport minus 40px tab bar), not `body`.
+
+### Unity visualizer iframe
+
+`UnityView.vue` embeds the pre-built Unity WebGL app:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  UnityView.vue (position:fixed, top:40px → bottom:0)            │
+│                                                                  │
+│  onMounted:                                                      │
+│    1. write localStorage['ha-smart-home-settings'] (latest)     │
+│    2. set iframeSrc = '/unity-visualizer/index.html'            │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  <iframe src="/unity-visualizer/index.html">             │   │
+│  │    reads localStorage on load → window.smartHomeConfig   │   │
+│  │    Unity C# calls window.getSmartHomeConfig() via jslib  │   │
+│  │    connects to Home Assistant with token                  │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  watch(route.path): if back to /visualizer after settings change│
+│    → writeConfigToStorage() + postMessage(SMART_HOME_CONFIG_UPDATE)│
+└─────────────────────────────────────────────────────────────────┘
+```
+
+`UnityView` is rendered directly in `App.vue` with `v-show="route.path === '/visualizer'"` — NOT via the router. This keeps the iframe permanently in the DOM so Unity never reloads. KeepAlive is NOT used for UnityView because KeepAlive detaches/reattaches DOM elements, which causes browsers to reload iframes.
+
+### Settings store — `settingsStore.ts`
+
+Pinia store with full `SmartHomeSettings` interface, auto-persisted to `localStorage['ha-smart-home-settings']`:
+
+| Field group | Fields |
+|-------------|--------|
+| Home Assistant | `homeAssistantAddress`, `homeAssistantAccessToken`, `useSSL`, `trackedEntities` |
+| MQTT (secondary) | `brokerIP`, `brokerPort`, `mqttUsername`, `mqttPassword`, `useWebSockets` |
+| Visualization | `minTemp`, `maxTemp`, `interpolationPower`, `updateInterval`, `maxParticles`, `optimizeForWebGL` |
+| Connection | `reconnectDelay`, `maxReconnectAttempts`, `connectionTimeout` |
+| Bridge | `sensorBridgeType`, `forceHomeAssistantInEditor` |
+
+`toUnityConfig()` returns a flat object that exactly matches the C# `ConfigurationData` struct in `WebGLConfigurationManager.cs` — no transformation needed on the Unity side.
+
+`watch(settings, deep)` auto-saves to localStorage on every change. `update(patch)` merges a partial object. `reset()` restores factory defaults.
+
+### Config delivery flow (localStorage → Unity)
+
+```
+SettingsView: Save clicked
+  → store.update(local)
+  → watch fires → localStorage['ha-smart-home-settings'] = JSON.stringify(settings)
+
+User navigates to #/visualizer (first time)
+  → UnityView.onMounted()
+    1. writeConfigToStorage()  ← ensure localStorage is fresh
+    2. iframeSrc = '/unity-visualizer/index.html'  ← triggers iframe load
+
+Unity iframe loads:
+  index.html <script> IIFE:
+    → reads localStorage['ha-smart-home-settings']
+    → builds window.smartHomeConfig from stored values
+
+Unity C# starts:
+  → WebGLConfigurationManager.RequestWebGLConfiguration()
+  → window.getSmartHomeConfig() (jslib)  ← reads window.smartHomeConfig
+  → ProcessConfiguration(json)
+  → HomeAssistantConnector_WebGL.Connect(address, token)
+
+User changes settings, returns to #/visualizer (v-show, no reload):
+  → UnityView watch(route.path)
+    1. writeConfigToStorage()
+    2. iframe.contentWindow.postMessage({ type: 'SMART_HOME_CONFIG_UPDATE', config })
+  → Unity index.html 'message' listener updates window.smartHomeConfig in-place
+```
 
 ### Key architectural patterns
 
@@ -218,12 +375,23 @@ cd www-vue/
 npm run dev      # Vite dev server
                  # publicDir = ../sweethome3d/www (serves SH3D files directly)
                  # Proxies PHP endpoints to localhost:8099
+                 # Serves /unity-visualizer/* from ../unity-build/ (unity-visualizer-static plugin)
 
 npm run build    # vue-tsc + vite build → dist/
                  # copyPublicDir: false (don't copy the 300MB SH3D assets)
 ```
 
 `VITE_PHP_TARGET` env var overrides the PHP proxy target (default `http://localhost:8099`).
+
+**Unity build prerequisite**: Place the pre-built Unity WebGL output at `ha-sweethome3d/unity-build/` before running `npm run dev` or `docker build`. The Unity build is not built as part of this repo's CI — see `REPO_SETUP.md` for the recommended CI/CD handoff between the two repos.
+
+### Adding a new view/tab
+
+To add a fourth tab:
+1. Create `www-vue/src/views/MyView.vue` with `position: fixed; top: 40px; ...` and `z-index: 1500; pointer-events: all`
+2. Add the route to `www-vue/src/router/index.ts`
+3. Add a `<RouterLink to="/my-view">` to `TabBar.vue`
+4. If the view must persist across tab switches (like Unity), render it directly in `App.vue` with `v-show="route.path === '/my-view'"` instead of routing it. This keeps the DOM permanently mounted (important for iframes which reload when detached)
 
 ### Adding a new HA field (Vue approach)
 
@@ -640,18 +808,64 @@ docker-compose up --build
 | Vue dialog detection guard | `isLiveDialog()` checks `el.closest('.dialog-template') === null` — SH3D keeps a hidden template copy in the DOM at all times; without this guard the observer fires twice |
 | Vue `<Teleport>` target | Teleports into `[data-name="name-and-price-panel"]` — a CSS grid inside the live dialog. Vue fields inherit the grid layout, so they appear as natural rows |
 | `furnitureStore.flushPendingProps()` | Writes all pending properties again on dialog close (belt-and-suspenders). This means each property write happens twice: once on `@change`, once on close |
-| Vue overlay `pointer-events` | `#vue-app` is `pointer-events: none`. Only components that need interaction set `pointer-events: auto` on their root elements. Without this, Vue blocks all SH3D mouse input |
+| Vue overlay `pointer-events` | `#vue-app` is `pointer-events: none; width: 0; height: 0`. Views escape via `position: fixed; pointer-events: all`. Without zero-size `#vue-app`, the overlay would block SH3D mouse input |
 | `vite build` copies no public assets | `copyPublicDir: false` — the SH3D `www/` files are served separately by nginx; the Vite build only outputs the Vue bundle |
+| `#home-pane` positioning context | Adding `position: absolute; top: 40px` to `#home-pane` in `index.html` makes it a positioning context. All SH3D children (`position: absolute`) now resolve heights relative to `#home-pane` (viewport minus 40px), not `body`. Do NOT change this CSS — removing it breaks the SH3D layout |
+| Unity iframe persistence | `UnityView` is rendered directly in `App.vue` with `v-show`, NOT via the router. KeepAlive is NOT used because it detaches/reattaches DOM — browsers reload iframes on reattach. `v-show` toggles CSS `display` without removing the element |
+| `#home-pane` hide method | Uses `visibility: hidden` + `position: absolute` + `pointer-events: none`, NOT `display: none`. `display: none` collapses dimensions to 0px, breaking SweetHome3D's splitter calculations. A `resize` event is dispatched on re-show to recalculate layout |
+| Unity Brotli files | Unity WebGL output uses `.wasm.br`, `.js.br`, `.data.br` pre-compressed files. nginx must set `Content-Encoding: br` + correct MIME type + `gzip off` for each. The Vite dev server handles this via the `unity-visualizer-static` plugin. Missing these headers causes the browser to display a load error |
+| Unity `window.getSmartHomeConfig()` | This function in `unity-build/index.html` is called by C# `WebGLConfigurationManager` via jslib. Do NOT rename or remove it. It reads from `window.smartHomeConfig` (built from localStorage) and returns a flat JSON string matching `ConfigurationData` |
+| Export buttons visibility | `<ExportButtons v-if="route.path === '/'"` in `App.vue`. Keyboard shortcuts (Ctrl+E) are also gated by this; they only make sense on the Floor Plan tab |
+| `urlBase` and Vue Router hash mode | `www-vue/index.html` must calculate `urlBase` from `origin + pathname`, NOT `href`. Vue Router uses hash mode (`/#/visualizer`), and `href` includes the `#` fragment — SH3D would request `http://host/#/listHomes.php` which resolves to `/` and returns `index.html` HTML instead of JSON. Symptom: `Unexpected token '<'` on page reload when on any tab other than Floor Plan |
+| Vite dev backend (`sh3d-dev-backend`) | `vite.config.ts` has a middleware that handles `listHomes.php`, `writeData.php`, `deleteHome.php`, and `/data/*` by reading/writing directly to `../test-data/`. This means **Docker is not required for dev** — only for production builds. The middleware scans `test-data/` for `.sh3x` files and serves them at `/data/`. Missing `.json` files return `{}` (SH3D expects valid JSON for preferences) |
+| Stale IndexedDB recovery data | SH3D auto-recovery stores home state in IndexedDB (`SweetHome3DJS/Recovery/`). After rebuilding Docker or switching between ports (5173 vs 8099), orphaned records may cause `Can't open home ... Error: 0`. Fix: DevTools → Application → IndexedDB → delete `SweetHome3DJS` database |
+| Unity build must exist for Docker | The `Dockerfile` has `COPY unity-build/ /var/www/html/unity-visualizer/`. If `unity-build/` is empty (only `.gitkeep`), the Unity tab will show a blank iframe. Place a real build before `docker build` |
+| `X-Frame-Options: SAMEORIGIN` | Already set in nginx.conf. This allows the Unity iframe because both the parent Vue app and the iframe origin are on the same host/port. No change needed |
 
 ---
 
 ## Companion Project
 
-This app works with the **Unity Smart Home Visualizer**:
+This app works with the **Unity Smart Home Visualizer** (`smart-home-visualizer` repo):
 - Path: `../smart-home-visualizer/`
 - AGENTS.md: `../smart-home-visualizer/AGENTS.md`
 - Import side: `SceneAutoSetup.cs` loads the exported ZIP + JSON
+- Unity WebGL build is placed at `ha-sweethome3d/unity-build/` and served at `/unity-visualizer/`
+- Config bridge: `smart-home-visualizer/Assets/WebGLTemplates/Default/index.html` reads from `localStorage['ha-smart-home-settings']` which is written by `settingsStore.ts`
+
+### Repository relationship
+
+The two repos are **kept separate** (different toolchains, different release cadences). The integration point is the Unity **WebGL build output** — a folder of static files that `ha-sweethome3d` serves at `/unity-visualizer/` inside the Docker image.
+
+See **`REPO_SETUP.md`** (in this repo root) for:
+- Rationale for not using a monorepo or git submodule
+- Recommended GitHub Actions CI/CD workflows for both repos (game-ci Unity builder)
+- Local development setup options (build Unity yourself, download release, copy from colleague)
+- `.gitignore` recommendations
+- Versioning strategy (matching `v*` tags across both repos)
+
+### Unity WebGL build location
+
+```
+ha-sweethome3d/unity-build/
+├── .gitkeep                    ← tracked; keeps dir in git
+├── index.html                  ← Unity entry point (localStorage reader)
+├── Build/
+│   ├── Build.loader.js
+│   ├── Build.wasm.br           ← WebAssembly (Brotli compressed)
+│   ├── Build.framework.js.br   ← Unity framework (Brotli)
+│   └── Build.data.br           ← Scene data (Brotli)
+├── TemplateData/
+│   ├── style.css
+│   └── favicon.ico
+└── StreamingAssets/
+    └── smart-viz-files/
+        ├── home-{id}_devices.json    ← IoT device metadata (overwritten by exportForUnity.php)
+        └── home-{id}_geometry.zip   ← 3D model OBJ+MTL (overwritten by exportForUnity.php)
+```
+
+The `StreamingAssets/smart-viz-files/` data bundled in the Unity build is only a default/demo dataset — the live export from the SweetHome3D editor always overwrites it.
 
 ---
 
-*Last updated: March 22, 2026*
+*Last updated: March 30, 2026*

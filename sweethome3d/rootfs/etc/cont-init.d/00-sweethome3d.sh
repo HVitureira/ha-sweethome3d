@@ -40,4 +40,82 @@ chmod 777 /var/www/html/data
 mkdir -p /var/log/nginx
 mkdir -p /var/log/php
 
+# ── Generate HA configuration JSON for the frontend & Unity visualizer ──
+HA_CONFIG_FILE="/var/www/html/ha-config.json"
+
+HA_ADDRESS=""
+HA_TOKEN=""
+HA_USE_SSL="true"
+HA_ENTITIES="[]"
+
+if bashio::config.has_value 'homeassistant_address'; then
+    HA_ADDRESS=$(bashio::config 'homeassistant_address')
+fi
+
+if bashio::config.has_value 'homeassistant_token'; then
+    HA_TOKEN=$(bashio::config 'homeassistant_token')
+fi
+
+if bashio::config.has_value 'use_ssl'; then
+    HA_USE_SSL=$(bashio::config 'use_ssl')
+fi
+
+if bashio::config.has_value 'tracked_entities'; then
+    # bashio::config returns JSON array for list types
+    HA_ENTITIES=$(bashio::config 'tracked_entities')
+fi
+
+# Auto-detect HA address via Supervisor API if not configured
+if [ -z "${HA_ADDRESS}" ] && [ -n "${SUPERVISOR_TOKEN:-}" ]; then
+    bashio::log.info "No HA address configured, attempting auto-detection via Supervisor API..."
+    HA_CORE_CONFIG=$(curl -sSf \
+        -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+        http://supervisor/core/api/config 2>/dev/null || true)
+
+    if [ -n "${HA_CORE_CONFIG}" ]; then
+        # Try external_url first, then internal_url
+        DETECTED_URL=$(echo "${HA_CORE_CONFIG}" | python3 -c "
+import sys, json
+try:
+    c = json.load(sys.stdin)
+    url = c.get('external_url') or c.get('internal_url') or ''
+    # Strip protocol prefix — connector builds ws(s)://address/api/websocket
+    url = url.replace('https://', '').replace('http://', '').rstrip('/')
+    print(url)
+except:
+    pass
+" 2>/dev/null || true)
+
+        if [ -n "${DETECTED_URL}" ]; then
+            HA_ADDRESS="${DETECTED_URL}"
+            bashio::log.info "Auto-detected HA address: ${HA_ADDRESS}"
+        fi
+    fi
+fi
+
+# Escape token for safe JSON embedding (handle special chars)
+HA_TOKEN_ESCAPED=$(python3 -c "
+import sys, json
+print(json.dumps(sys.argv[1])[1:-1])
+" "${HA_TOKEN}" 2>/dev/null || echo "${HA_TOKEN}")
+
+cat > "${HA_CONFIG_FILE}" <<EOJSON
+{
+  "homeAssistantAddress": "${HA_ADDRESS}",
+  "homeAssistantAccessToken": "${HA_TOKEN_ESCAPED}",
+  "useSSL": ${HA_USE_SSL},
+  "trackedEntities": ${HA_ENTITIES},
+  "source": "addon-options"
+}
+EOJSON
+
+chown nginx:nginx "${HA_CONFIG_FILE}"
+chmod 644 "${HA_CONFIG_FILE}"
+
+if [ -n "${HA_ADDRESS}" ]; then
+    bashio::log.info "HA config written (address: ${HA_ADDRESS}, token length: ${#HA_TOKEN})"
+else
+    bashio::log.warning "HA address not configured — set in Add-on Configuration or it will be auto-detected from the browser"
+fi
+
 bashio::log.info "SweetHome3D addon initialization complete"

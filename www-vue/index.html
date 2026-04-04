@@ -66,6 +66,17 @@
       touch-action: none;
     }
 
+    /* Tab bar integration: push SweetHome3D below the 40px tab bar.
+       Makes #home-pane a positioning context so all its position:absolute
+       children compute heights relative to it (viewport minus 40px). */
+    #home-pane {
+      position: absolute;
+      top: 40px;
+      left: 0;
+      right: 0;
+      bottom: 0;
+    }
+
     #home-plan::selection {
       background: #0042E0;
     }
@@ -1648,7 +1659,8 @@
   </div>
 
   <script type="text/javascript">
-    var urlBase = window.location.href.substring(0, window.location.href.lastIndexOf("/") + 1);
+    // Use origin+pathname (not href) so the hash fragment from Vue Router doesn't corrupt the base URL
+    var urlBase = (window.location.origin + window.location.pathname).replace(/\/[^\/]*$/, '/') || '/';
     console.log('🔧 Initializing SweetHome3D with urlBase:', urlBase);
 
     var application = new SweetHome3DJSApplication(

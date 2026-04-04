@@ -23,6 +23,29 @@ mkdir -p /var/log/nginx
 mkdir -p /var/log/php
 mkdir -p /var/www/html/data
 
+# Generate ha-config.json from OPTIONS_JSON for frontend/Unity config
+# (In HA addon mode, 00-sweethome3d.sh handles this via bashio)
+OPTIONS_FILE="${OPTIONS_JSON:-/data/options.json}"
+HA_CONFIG="/var/www/html/ha-config.json"
+if [ -f "$OPTIONS_FILE" ]; then
+    # Use PHP (already installed) to transform options.json → ha-config.json
+    php82 -r '
+        $opts = json_decode(file_get_contents($argv[1]), true) ?: [];
+        $cfg = [
+            "homeAssistantAddress" => $opts["homeassistant_address"] ?? "",
+            "homeAssistantAccessToken" => $opts["homeassistant_token"] ?? "",
+            "useSSL" => $opts["use_ssl"] ?? true,
+            "trackedEntities" => $opts["tracked_entities"] ?? [],
+            "source" => "addon-options"
+        ];
+        file_put_contents($argv[2], json_encode($cfg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    ' "$OPTIONS_FILE" "$HA_CONFIG"
+    echo "Generated ha-config.json from $OPTIONS_FILE"
+else
+    echo '{"source":"standalone"}' > "$HA_CONFIG"
+    echo "No OPTIONS_JSON found, created empty ha-config.json"
+fi
+
 # Set permissions
 chown -R nginx:nginx /var/www/html
 chmod 755 /var/www/html

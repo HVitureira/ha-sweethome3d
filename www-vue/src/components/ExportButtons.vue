@@ -61,14 +61,13 @@ function showError(message: string) {
 }
 
 async function exportForUnity() {
-  console.log('📤 Starting Unity export...')
+  console.log('📤 Starting Unity export to server...')
   const app = (window as any).application
   const UnityExportUtilities = (window as any).UnityExportUtilities
 
   if (!app) { showError('Application not ready'); return }
   if (typeof UnityExportUtilities === 'undefined') {
     showError('Unity export utilities not loaded. Please refresh the page.')
-    console.error('UnityExportUtilities class not found')
     return
   }
 
@@ -89,30 +88,69 @@ async function exportForUnity() {
       if (!proceed) return
     }
 
-    showLoading('Exporting for Unity: 3D model, device data, and Unity import script...')
+    showLoading('Exporting for Unity: 3D model + device data → saving to server...')
 
-    const result = await UnityExportUtilities.exportForUnity(
-      home,
-      (window as any).homeComponent3D || null,
-      homeName
-    )
+    // ── Blob interception ─────────────────────────────────────────────────────
+    // SH3D's export uses URL.createObjectURL + anchor.click for all downloads.
+    // We intercept both to capture blobs and POST them to the server instead.
+    const captured: { name: string; blob: Blob }[] = []
+    const blobUrlMap = new Map<string, Blob>()
+
+    const origCreateObjectURL = (URL.createObjectURL as typeof URL.createObjectURL).bind(URL)
+    const origRevokeObjectURL = URL.revokeObjectURL.bind(URL)
+    const origAnchorClick = HTMLAnchorElement.prototype.click
+
+    URL.createObjectURL = (obj: Blob | MediaSource) => {
+      const url = origCreateObjectURL(obj as Blob)
+      if (obj instanceof Blob) blobUrlMap.set(url, obj)
+      return url
+    }
+    HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
+      if (this.download && this.href && blobUrlMap.has(this.href)) {
+        captured.push({ name: this.download, blob: blobUrlMap.get(this.href)! })
+        origRevokeObjectURL(this.href)
+        blobUrlMap.delete(this.href)
+        return // suppress browser download
+      }
+      origAnchorClick.call(this)
+    }
+
+    let result: any
+    try {
+      result = await UnityExportUtilities.exportForUnity(
+        home,
+        (window as any).homeComponent3D || null,
+        homeName,
+      )
+    } finally {
+      // Always restore patches, even if export throws
+      URL.createObjectURL = origCreateObjectURL
+      HTMLAnchorElement.prototype.click = origAnchorClick
+    }
+    // ── End interception ─────────────────────────────────────────────────────
+    // POST all captured blobs to the server
+    const serverResults: string[] = []
+
+    for (const { name, blob } of captured) {
+      const resp = await fetch(
+        `writeData.php?path=${encodeURIComponent(name)}`,
+        { method: 'POST', body: blob },
+      )
+      serverResults.push(resp.ok ? `✓ ${name}` : `✗ ${name} (HTTP ${resp.status})`)
+    }
 
     hideLoading()
 
-    const message =
-      `Unity export complete!\n\n` +
-      `📦 3D Geometry: ${homeName}_geometry.zip\n` +
-      `   - ${result.geometry.vertices} vertices\n` +
-      `   - ${result.geometry.faces} faces\n` +
-      `   - ${result.geometry.materials} materials\n\n` +
-      `📋 Device Data: ${homeName}_devices.json\n` +
-      `   - ${result.devices} smart device${result.devices !== 1 ? 's' : ''}\n` +
-      `   - ${result.rooms} room${result.rooms !== 1 ? 's' : ''}\n\n` +
-      `📜 Unity Import Script: ${homeName}_Import.cs\n\n` +
-      `Import all files into Unity for your digital twin.`
-
-    showNotification(message, 'success')
-    console.log('✅ Unity export complete:', result)
+    if (serverResults.length === 0) {
+      showNotification('⚠️ Nothing captured — OBJExporter may not be loaded yet.', 'warning')
+    } else {
+      const devCount = result?.devices ?? '?'
+      showNotification(
+        `✅ Exported for Unity — ${serverResults.join(', ')} · ${devCount} device(s)`,
+        'success',
+      )
+    }
+    console.log('✅ Unity export complete. Saved:', serverResults)
   } catch (e: any) {
     hideLoading()
     showError('Unity export failed: ' + e.message)
