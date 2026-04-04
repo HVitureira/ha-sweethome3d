@@ -1591,7 +1591,7 @@ class OBJExporter {
     }
     
     // Generate ZIP
-    return await zip.generate({type: 'blob'});
+    return await zip.generate({type: 'blob', compression: 'DEFLATE', compressionOptions: {level: 6}});
   }
 
   /**

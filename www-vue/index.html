@@ -1659,7 +1659,8 @@
   </div>
 
   <script type="text/javascript">
-    var urlBase = window.location.href.substring(0, window.location.href.lastIndexOf("/") + 1);
+    // Use origin+pathname (not href) so the hash fragment from Vue Router doesn't corrupt the base URL
+    var urlBase = (window.location.origin + window.location.pathname).replace(/\/[^\/]*$/, '/') || '/';
     console.log('🔧 Initializing SweetHome3D with urlBase:', urlBase);
 
     var application = new SweetHome3DJSApplication(

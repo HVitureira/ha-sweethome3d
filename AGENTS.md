@@ -67,7 +67,7 @@ This document provides comprehensive context for LLM agents working on this modi
 │  ├── HA Integration Script (inline ~1000 lines)                 │
 │  ├── Vue 3 app (#vue-app overlay, 0px, position:fixed)          │
 │  │     ├── TabBar.vue (position:fixed, z-index:2000)            │
-│  │     ├── RouterView with KeepAlive (UnityView stays alive)    │
+│  │     ├── RouterView + UnityView (always mounted, v-show)      │
 │  │     ├── FurnitureDialogEnhancer (Teleport into SH3D dialog)  │
 │  │     └── ExportButtons (only on Floor Plan tab)               │
 │  └── /unity-visualizer/ → Unity WebGL iframe content            │
@@ -112,12 +112,12 @@ ha-sweethome3d/
 │   └── README.md                   # Add-on specific readme
 ├── www-vue/                        # Vue 3 TypeScript overlay app (see section below)
 │   ├── index.html                  # Vite entry — loads SH3D scripts + mounts #vue-app
-│   ├── vite.config.ts              # publicDir → ../sweethome3d/www; PHP proxy + unity-visualizer-static plugin
+│   ├── vite.config.ts              # publicDir → ../sweethome3d/www; sh3d-dev-backend middleware (no Docker needed); unity-visualizer-static plugin
 │   ├── tsconfig.json               # TypeScript project config (strict)
 │   ├── package.json                # pinia, vue, vue-router
 │   └── src/
 │       ├── main.ts                 # createApp → .use(pinia).use(router).mount('#vue-app')
-│       ├── App.vue                 # Root: TabBar + RouterView(KeepAlive) + route watcher
+│       ├── App.vue                 # Root: TabBar + RouterView + UnityView(v-show) + route watcher
 │       ├── router/
 │       │   └── index.ts            # Vue Router hash history: /, /visualizer, /settings
 │       ├── views/
@@ -208,20 +208,31 @@ Vue Router is configured with **hash history** (`createWebHashHistory`). This me
 | Route | Component | Behavior |
 |-------|-----------|----------|
 | `#/` | `FloorPlanView.vue` | Shows `#home-pane` (SweetHome3D DOM) |
-| `#/visualizer` | `UnityView.vue` | Shows Unity iframe (kept alive via KeepAlive) |
+| `#/visualizer` | `UnityView.vue` | Shows Unity iframe (always mounted via v-show in App.vue, not routed) |
 | `#/settings` | `SettingsView.vue` | Shows settings form |
 
 ### SweetHome3D DOM toggle
 
-SweetHome3D renders into `#home-pane` — a DOM node owned by vanilla JS, not Vue. Visibility is toggled via a route watcher in `App.vue`:
+SweetHome3D renders into `#home-pane` — a DOM node owned by vanilla JS, not Vue. Visibility is toggled via a route watcher in `App.vue` using `visibility: hidden` + `position: absolute` (NOT `display: none`, which collapses dimensions and breaks SweetHome3D's splitter layout):
 
 ```typescript
 watch(() => route.path, (path) => {
   const pane = document.getElementById('home-pane')
   if (!pane) return
-  pane.style.display = path === '/' ? '' : 'none'
+  if (path === '/') {
+    pane.style.visibility = ''
+    pane.style.position = ''
+    pane.style.pointerEvents = ''
+    requestAnimationFrame(() => window.dispatchEvent(new Event('resize')))
+  } else {
+    pane.style.visibility = 'hidden'
+    pane.style.position = 'absolute'
+    pane.style.pointerEvents = 'none'
+  }
 }, { immediate: true })
 ```
+
+A `resize` event is dispatched when re-showing so SweetHome3D recalculates its splitter/canvas layout.
 
 `#home-pane` has `position: absolute; top: 40px; left: 0; right: 0; bottom: 0` (added via `index.html` CSS). This makes `#home-pane` a positioning context so all its `position: absolute` children compute `100%` heights relative to it (viewport minus 40px tab bar), not `body`.
 
@@ -249,7 +260,7 @@ watch(() => route.path, (path) => {
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-`defineOptions({ name: 'UnityView' })` is **required** so `<KeepAlive :include="['UnityView']">` can identify and preserve this component across tab switches. Without KeepAlive, Unity would reload every time the user switches away.
+`UnityView` is rendered directly in `App.vue` with `v-show="route.path === '/visualizer'"` — NOT via the router. This keeps the iframe permanently in the DOM so Unity never reloads. KeepAlive is NOT used for UnityView because KeepAlive detaches/reattaches DOM elements, which causes browsers to reload iframes.
 
 ### Settings store — `settingsStore.ts`
 
@@ -290,7 +301,7 @@ Unity C# starts:
   → ProcessConfiguration(json)
   → HomeAssistantConnector_WebGL.Connect(address, token)
 
-User changes settings, returns to #/visualizer (KeepAlive, no reload):
+User changes settings, returns to #/visualizer (v-show, no reload):
   → UnityView watch(route.path)
     1. writeConfigToStorage()
     2. iframe.contentWindow.postMessage({ type: 'SMART_HOME_CONFIG_UPDATE', config })
@@ -380,7 +391,7 @@ To add a fourth tab:
 1. Create `www-vue/src/views/MyView.vue` with `position: fixed; top: 40px; ...` and `z-index: 1500; pointer-events: all`
 2. Add the route to `www-vue/src/router/index.ts`
 3. Add a `<RouterLink to="/my-view">` to `TabBar.vue`
-4. If the view must persist across tab switches (like Unity), add `defineOptions({ name: 'MyView' })` and add `'MyView'` to the `KeepAlive :include` array in `App.vue`
+4. If the view must persist across tab switches (like Unity), render it directly in `App.vue` with `v-show="route.path === '/my-view'"` instead of routing it. This keeps the DOM permanently mounted (important for iframes which reload when detached)
 
 ### Adding a new HA field (Vue approach)
 
@@ -800,10 +811,14 @@ docker-compose up --build
 | Vue overlay `pointer-events` | `#vue-app` is `pointer-events: none; width: 0; height: 0`. Views escape via `position: fixed; pointer-events: all`. Without zero-size `#vue-app`, the overlay would block SH3D mouse input |
 | `vite build` copies no public assets | `copyPublicDir: false` — the SH3D `www/` files are served separately by nginx; the Vite build only outputs the Vue bundle |
 | `#home-pane` positioning context | Adding `position: absolute; top: 40px` to `#home-pane` in `index.html` makes it a positioning context. All SH3D children (`position: absolute`) now resolve heights relative to `#home-pane` (viewport minus 40px), not `body`. Do NOT change this CSS — removing it breaks the SH3D layout |
-| Unity iframe `KeepAlive` | `UnityView.vue` MUST have `defineOptions({ name: 'UnityView' })`. Without the named component, KeepAlive's `:include="['UnityView']"` cannot match it and Unity reloads on every tab switch |
+| Unity iframe persistence | `UnityView` is rendered directly in `App.vue` with `v-show`, NOT via the router. KeepAlive is NOT used because it detaches/reattaches DOM — browsers reload iframes on reattach. `v-show` toggles CSS `display` without removing the element |
+| `#home-pane` hide method | Uses `visibility: hidden` + `position: absolute` + `pointer-events: none`, NOT `display: none`. `display: none` collapses dimensions to 0px, breaking SweetHome3D's splitter calculations. A `resize` event is dispatched on re-show to recalculate layout |
 | Unity Brotli files | Unity WebGL output uses `.wasm.br`, `.js.br`, `.data.br` pre-compressed files. nginx must set `Content-Encoding: br` + correct MIME type + `gzip off` for each. The Vite dev server handles this via the `unity-visualizer-static` plugin. Missing these headers causes the browser to display a load error |
 | Unity `window.getSmartHomeConfig()` | This function in `unity-build/index.html` is called by C# `WebGLConfigurationManager` via jslib. Do NOT rename or remove it. It reads from `window.smartHomeConfig` (built from localStorage) and returns a flat JSON string matching `ConfigurationData` |
 | Export buttons visibility | `<ExportButtons v-if="route.path === '/'"` in `App.vue`. Keyboard shortcuts (Ctrl+E) are also gated by this; they only make sense on the Floor Plan tab |
+| `urlBase` and Vue Router hash mode | `www-vue/index.html` must calculate `urlBase` from `origin + pathname`, NOT `href`. Vue Router uses hash mode (`/#/visualizer`), and `href` includes the `#` fragment — SH3D would request `http://host/#/listHomes.php` which resolves to `/` and returns `index.html` HTML instead of JSON. Symptom: `Unexpected token '<'` on page reload when on any tab other than Floor Plan |
+| Vite dev backend (`sh3d-dev-backend`) | `vite.config.ts` has a middleware that handles `listHomes.php`, `writeData.php`, `deleteHome.php`, and `/data/*` by reading/writing directly to `../test-data/`. This means **Docker is not required for dev** — only for production builds. The middleware scans `test-data/` for `.sh3x` files and serves them at `/data/`. Missing `.json` files return `{}` (SH3D expects valid JSON for preferences) |
+| Stale IndexedDB recovery data | SH3D auto-recovery stores home state in IndexedDB (`SweetHome3DJS/Recovery/`). After rebuilding Docker or switching between ports (5173 vs 8099), orphaned records may cause `Can't open home ... Error: 0`. Fix: DevTools → Application → IndexedDB → delete `SweetHome3DJS` database |
 | Unity build must exist for Docker | The `Dockerfile` has `COPY unity-build/ /var/www/html/unity-visualizer/`. If `unity-build/` is empty (only `.gitkeep`), the Unity tab will show a blank iframe. Place a real build before `docker build` |
 | `X-Frame-Options: SAMEORIGIN` | Already set in nginx.conf. This allows the Unity iframe because both the parent Vue app and the iframe origin are on the same host/port. No change needed |
 
@@ -853,4 +868,4 @@ The `StreamingAssets/smart-viz-files/` data bundled in the Unity build is only a
 
 ---
 
-*Last updated: March 26, 2026*
+*Last updated: March 30, 2026*

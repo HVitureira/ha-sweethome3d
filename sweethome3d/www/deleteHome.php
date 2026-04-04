@@ -19,8 +19,22 @@
    * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
    */
    
-  // Deletes the home matching the parameter "home"
+  // Deletes the home matching the parameter "home" and its sidecar files
   $dataDir = "data";
-  $homeFile = $dataDir."/".$_GET['home'].".sh3x"; 
-  unlink($homeFile);
+  $homeId = $_GET['home'];
+
+  $homeFile = $dataDir."/".$homeId.".sh3x";
+  if (file_exists($homeFile)) {
+    unlink($homeFile);
+  }
+
+  $devicesFile = $dataDir."/".$homeId."_devices.json";
+  if (file_exists($devicesFile)) {
+    unlink($devicesFile);
+  }
+
+  $geometryFile = $dataDir."/".$homeId."_geometry.zip";
+  if (file_exists($geometryFile)) {
+    unlink($geometryFile);
+  }
 ?>
