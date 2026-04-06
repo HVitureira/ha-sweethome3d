@@ -1,0 +1,248 @@
+{
+  "version": "1.0",
+  "exportedAt": "2026-02-19T21:20:16.885Z",
+  "unitsystem": "meters",
+  "coordinateSystem": {
+    "origin": "center",
+    "yAxis": "up",
+    "zAxis": "forward"
+  },
+  "devices": [
+    {
+      "id": "device_0",
+      "name": "Temperature & Humidity Sensor",
+      "type": "temperature_sensor",
+      "catalogId": null,
+      "position": {
+        "x": 14.038421076925017,
+        "y": 0.7717207642949302,
+        "z": 7.7450009199610985
+      },
+      "rotation": {
+        "y": 0
+      },
+      "isIoTDevice": true,
+      "dimensions": {
+        "width": 0.06,
+        "height": 0.05,
+        "depth": 0.06
+      },
+      "haEntityId": "sensor.sonoff_sensor_kitchen_1_temperature",
+      "effectRadius": 5,
+      "propagationType": "room_fill",
+      "affectedArea": {
+        "type": "polygon",
+        "vertices": [
+          {
+            "x": 7.001347453575297,
+            "y": 0,
+            "z": 1.9977306547654672
+          },
+          {
+            "x": 7.001347453575297,
+            "y": 0,
+            "z": 7.985778957252487
+          },
+          {
+            "x": 14.707269444926759,
+            "y": 0,
+            "z": 7.987313186183
+          },
+          {
+            "x": 14.762629405786669,
+            "y": 0,
+            "z": 2.0099397513603976
+          }
+        ],
+        "volume": true,
+        "boundedByWalls": true
+      }
+    },
+    {
+      "id": "device_1",
+      "name": "Temperature & Humidity Sensor",
+      "type": "temperature_sensor",
+      "catalogId": null,
+      "position": {
+        "x": 7.6174719619995575,
+        "y": 0.498616050905531,
+        "z": 2.3757275099965147
+      },
+      "rotation": {
+        "y": 0
+      },
+      "isIoTDevice": true,
+      "dimensions": {
+        "width": 0.06,
+        "height": 0.05,
+        "depth": 0.06
+      },
+      "haEntityId": "sensor.sonoff_sensor_living_room_1_temperature",
+      "effectRadius": 5,
+      "propagationType": "room_fill",
+      "affectedArea": {
+        "type": "polygon",
+        "vertices": [
+          {
+            "x": 7.001347453575297,
+            "y": 0,
+            "z": 1.9977306547654672
+          },
+          {
+            "x": 7.001347453575297,
+            "y": 0,
+            "z": 7.985778957252487
+          },
+          {
+            "x": 14.707269444926759,
+            "y": 0,
+            "z": 7.987313186183
+          },
+          {
+            "x": 14.762629405786669,
+            "y": 0,
+            "z": 2.0099397513603976
+          }
+        ],
+        "volume": true,
+        "boundedByWalls": true
+      }
+    },
+    {
+      "id": "device_2",
+      "name": "Smart Light Bulb",
+      "type": "light",
+      "catalogId": null,
+      "position": {
+        "x": 7.798156729733874,
+        "y": 0.531551740699528,
+        "z": 2.4589035105712687
+      },
+      "rotation": {
+        "y": 0
+      },
+      "isIoTDevice": true,
+      "dimensions": {
+        "width": 0.08,
+        "height": 0.12,
+        "depth": 0.08
+      },
+      "haEntityId": "shellyvintage_3494546efdbb",
+      "effectRadius": 6,
+      "propagationType": "room_fill",
+      "affectedArea": {
+        "type": "polygon",
+        "vertices": [
+          {
+            "x": 7.001347453575297,
+            "y": 0,
+            "z": 1.9977306547654672
+          },
+          {
+            "x": 7.001347453575297,
+            "y": 0,
+            "z": 7.985778957252487
+          },
+          {
+            "x": 14.707269444926759,
+            "y": 0,
+            "z": 7.987313186183
+          },
+          {
+            "x": 14.762629405786669,
+            "y": 0,
+            "z": 2.0099397513603976
+          }
+        ],
+        "volume": true,
+        "boundedByWalls": true
+      }
+    }
+  ],
+  "rooms": [
+    {
+      "id": "room_0",
+      "name": null,
+      "points": [
+        {
+          "x": 7.001347453575297,
+          "z": 1.9977306547654672
+        },
+        {
+          "x": 7.001347453575297,
+          "z": 7.985778957252487
+        },
+        {
+          "x": 14.707269444926759,
+          "z": 7.987313186183
+        },
+        {
+          "x": 14.762629405786669,
+          "z": 2.0099397513603976
+        }
+      ],
+      "area": 46.26809477791774,
+      "floorLevel": 0,
+      "ceilingHeight": 2.5
+    }
+  ],
+  "walls": [
+    {
+      "id": "wall_0",
+      "start": {
+        "x": 6.998975961413403,
+        "z": 1.9916333912473374
+      },
+      "end": {
+        "x": 6.988079886195692,
+        "z": 7.98447476098877
+      },
+      "height": 2.5,
+      "thickness": 0.075
+    },
+    {
+      "id": "wall_1",
+      "start": {
+        "x": 6.988079886195692,
+        "z": 7.98447476098877
+      },
+      "end": {
+        "x": 14.717158926643426,
+        "z": 7.985787782365989
+      },
+      "height": 2.5,
+      "thickness": 0.075
+    },
+    {
+      "id": "wall_2",
+      "start": {
+        "x": 14.717158926643426,
+        "z": 7.985787782365989
+      },
+      "end": {
+        "x": 14.749847152296558,
+        "z": 2.003842487842269
+      },
+      "height": 2.5,
+      "thickness": 0.075
+    },
+    {
+      "id": "wall_3",
+      "start": {
+        "x": 14.749847152296558,
+        "z": 2.003842487842269
+      },
+      "end": {
+        "x": 7.0207681118488265,
+        "z": 2.0134255416827616
+      },
+      "height": 2.5,
+      "thickness": 0.075
+    }
+  ],
+  "metadata": {
+    "deviceCount": 3,
+    "roomCount": 1,
+    "wallCount": 4
+  }
+}

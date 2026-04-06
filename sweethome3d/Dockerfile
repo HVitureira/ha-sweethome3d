@@ -6,10 +6,10 @@ ARG BUILD_VERSION
 # Context is ha-sweethome3d/ root, so www-vue/ and sweethome3d/ are both accessible
 FROM node:20-alpine AS vue-builder
 WORKDIR /build
-COPY www-vue/package*.json ./
+COPY www-vue/package.json ./
 RUN npm install
 COPY www-vue/ ./
-RUN npm run build
+RUN rm -f package-lock.json && npm install && npm run build
 
 # Stage 2: Runtime image
 FROM ${BUILD_FROM}
@@ -47,6 +47,9 @@ COPY sweethome3d/www/ /var/www/html/
 
 # Overlay Vue build on top: replaces index.html and adds assets/
 COPY --from=vue-builder /build/dist/ /var/www/html/
+
+# Copy Unity WebGL build (pre-built, placed at ha-sweethome3d/unity-build/)
+COPY unity-build/ /var/www/html/unity-visualizer/
 
 # Copy startup script
 COPY sweethome3d/start.sh /start.sh
