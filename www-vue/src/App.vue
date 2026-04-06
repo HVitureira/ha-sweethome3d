@@ -2,7 +2,7 @@
   <TabBar />
 
   <RouterView v-slot="{ Component }">
-    <KeepAlive>
+    <KeepAlive include="FloorPlanView">
       <component :is="Component" v-if="route.path !== '/visualizer'" />
     </KeepAlive>
   </RouterView>
