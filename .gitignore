@@ -57,3 +57,8 @@ home-assistant_v2.db
 deps/
 tts/
 .google_calendars.yaml
+
+# Local-only test configuration and data
+test-config
+test-config.local
+test-data/

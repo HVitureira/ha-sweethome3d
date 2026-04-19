@@ -4,14 +4,14 @@
 # Default configuration (recommended for most users)
 php_max_execution_time: 300
 php_memory_limit: "256M"
-php_upload_max_filesize: "50M"
-php_post_max_size: "50M"
+php_upload_max_filesize: "200M"
+php_post_max_size: "200M"
 
 # High-performance configuration (for complex designs or slow hardware)
 # php_max_execution_time: 600
 # php_memory_limit: "512M"
-# php_upload_max_filesize: "100M"
-# php_post_max_size: "100M"
+# php_upload_max_filesize: "300M"
+# php_post_max_size: "300M"
 
 # Minimal configuration (for resource-constrained systems)
 # php_max_execution_time: 180
@@ -34,9 +34,9 @@ php_post_max_size: "50M"
 # php_upload_max_filesize:
 #   - Maximum size for uploaded files (textures, models, etc.)
 #   - Should match or be smaller than php_post_max_size
-#   - Format: "25M", "50M", "100M", etc.
+#   - Format: "25M", "100M", "200M", etc.
 #
 # php_post_max_size:
 #   - Maximum size for POST data (includes file uploads)
 #   - Should be larger than php_upload_max_filesize
-#   - Format: "25M", "50M", "100M", etc.
+#   - Format: "25M", "100M", "200M", etc.

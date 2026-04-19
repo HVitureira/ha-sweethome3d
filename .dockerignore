@@ -1,0 +1,6 @@
+test-config
+test-config.local
+test-data
+.git
+.gitignore
+node_modules

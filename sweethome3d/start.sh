@@ -60,8 +60,8 @@ sleep 2
 # Update PHP configuration with default values
 sed -i "s/php_admin_value\[max_execution_time\] = .*/php_admin_value[max_execution_time] = 300/" /etc/php82/php-fpm.conf
 sed -i "s/php_admin_value\[memory_limit\] = .*/php_admin_value[memory_limit] = 256M/" /etc/php82/php-fpm.conf
-sed -i "s/php_admin_value\[upload_max_filesize\] = .*/php_admin_value[upload_max_filesize] = 50M/" /etc/php82/php-fpm.conf
-sed -i "s/php_admin_value\[post_max_size\] = .*/php_admin_value[post_max_size] = 50M/" /etc/php82/php-fpm.conf
+sed -i "s/php_admin_value\[upload_max_filesize\] = .*/php_admin_value[upload_max_filesize] = 200M/" /etc/php82/php-fpm.conf
+sed -i "s/php_admin_value\[post_max_size\] = .*/php_admin_value[post_max_size] = 200M/" /etc/php82/php-fpm.conf
 
 echo "Starting PHP-FPM..."
 php-fpm82 --daemonize --fpm-config /etc/php82/php-fpm.conf

@@ -14,13 +14,14 @@ services:
       - "8099:8099"
     volumes:
       - ./test-data:/var/www/html/data
-      - ./test-config:/data/options.json:ro
+      - ./test-config.local:/data/options.json:ro
     environment:
       - OPTIONS_JSON=/data/options.json
     restart: unless-stopped
 
 # To test locally:
 # 1. Ensure test-data directory exists
+# 2. Create test-config.local from test-config.example
 # 2. Run: docker-compose up --build
 # 3. Access http://localhost:8099
 # 4. Test saving/loading home designs
