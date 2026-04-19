@@ -521,7 +521,7 @@ class OBJExporter {
                 const texData = texFile.asUint8Array().buffer;
                 const texBaseName = `furniture_${name}_${texFile.name.split('.')[0]}`;
                 const texName = await this.addTexture(texBaseName, texFile.name, texData);
-                textureMap.set(texFile.name, texName);
+                this.registerTextureMapKeys(textureMap, texFile.name, texName);
               } catch (e) { console.warn(`Failed to extract texture ${texFile.name}:`, e.message); }
             }
 
@@ -601,7 +601,7 @@ class OBJExporter {
                 const texData = texFile.asUint8Array().buffer;
                 const texBaseName = `furniture_${name}_${texFile.name.split('.')[0]}`;
                 const texName = await this.addTexture(texBaseName, texFile.name, texData);
-                textureMap.set(texFile.name, texName);
+                this.registerTextureMapKeys(textureMap, texFile.name, texName);
               } catch (error) {
                 console.warn(`⚠️ Failed to extract texture ${texFile.name}:`, error.message);
               }
@@ -676,15 +676,13 @@ class OBJExporter {
           };
 
           if (trimmed.startsWith('map_Kd ')) {
-            const texturePath = trimmed.substring(7).trim();
-            // Get filename and handle both forward and back slashes
-            const textureFileName = texturePath.split(/[/\\]/).pop();
+            const texturePath = this.extractMapKdPath(trimmed.substring(7).trim());
+            const textureFileName = this.extractTextureFileName(texturePath);
 
-            // Case-insensitive texture lookup
-            const lowerFileName = textureFileName.toLowerCase();
-            if (textureMapLower.has(lowerFileName)) {
-              currentData.texture = textureMapLower.get(lowerFileName);
-            }
+            // Case-insensitive texture lookup with full-path and basename fallback.
+            const lowerPath = (texturePath || '').toLowerCase();
+            const lowerFileName = (textureFileName || '').toLowerCase();
+            currentData.texture = textureMapLower.get(lowerPath) || textureMapLower.get(lowerFileName) || null;
           } else if (trimmed.startsWith('Kd ')) {
             // Parse diffuse color: Kd r g b
             const parts = trimmed.substring(3).trim().split(/\s+/);
@@ -731,6 +729,69 @@ class OBJExporter {
   }
 
   /**
+   * Extract actual texture path from map_Kd payload.
+   * Handles common MTL options and quoted filenames.
+   */
+  extractMapKdPath(payload) {
+    if (!payload) return '';
+
+    // Cache parser helpers once to avoid repeated allocations in large MTLs.
+    if (!this._mapKdTokenRegex) {
+      this._mapKdTokenRegex = /"[^"]+"|\S+/g;
+      this._mapKdOptsWithArgs = new Set(['-o', '-s', '-t', '-mm']);
+      this._mapKdOptsNoArgs = new Set(['-blendu', '-blendv', '-boost', '-cc', '-clamp', '-texres', '-bm', '-imfchan', '-type']);
+    }
+
+    const tokens = payload.match(this._mapKdTokenRegex) || [];
+
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      if (!token.startsWith('-')) {
+        return token.replace(/^"|"$/g, '');
+      }
+
+      if (this._mapKdOptsWithArgs.has(token)) {
+        let skip = 1;
+        if (token === '-o' || token === '-s' || token === '-t') skip = 3;
+        if (token === '-mm') skip = 2;
+        i += skip;
+        continue;
+      }
+
+      if (this._mapKdOptsNoArgs.has(token) && i + 1 < tokens.length) {
+        i += 1;
+      }
+    }
+
+    return payload.replace(/^"|"$/g, '');
+  }
+
+  /**
+   * Return texture basename handling separators and quotes.
+   */
+  extractTextureFileName(texturePath) {
+    if (!texturePath) return '';
+    const cleaned = texturePath.replace(/^"|"$/g, '');
+    const parts = cleaned.split(/[/\\]/);
+    return parts[parts.length - 1] || '';
+  }
+
+  /**
+   * Register both full-path and basename texture keys.
+   */
+  registerTextureMapKeys(textureMap, sourcePath, exportedName) {
+    if (!sourcePath || !exportedName) return;
+
+    const cleaned = sourcePath.replace(/^"|"$/g, '');
+    textureMap.set(cleaned, exportedName);
+
+    const baseName = this.extractTextureFileName(cleaned);
+    if (baseName) {
+      textureMap.set(baseName, exportedName);
+    }
+  }
+
+  /**
    * Parse OBJ content and add to our export with transformations
    */
   async integrateOBJContent(objContent, x, y, elevation, angle, name, piece, materialTextureMap = new Map()) {
@@ -760,7 +821,18 @@ class OBJExporter {
 
     const materialName = `furniture_${name}`;
 
-    // Create default furniture material with color override if applicable
+    // Create default furniture material with color override if applicable.
+    // If no override exists, fall back to first parsed MTL material so OBJs without usemtl
+    // still keep their authored appearance instead of flat gray.
+    let firstMtlData = null;
+    if (materialTextureMap && typeof materialTextureMap.values === 'function') {
+      const it = materialTextureMap.values();
+      const first = it.next();
+      if (!first.done) {
+        firstMtlData = first.value;
+      }
+    }
+
     if (colorOverride !== null && colorOverride !== undefined) {
       this.materials.set(materialName, {
         name: materialName,
@@ -770,6 +842,17 @@ class OBJExporter {
         shininess: 30,
         transparency: 1.0,
         texture: null
+      });
+    } else if (firstMtlData) {
+      this.materials.set(materialName, {
+        name: materialName,
+        ambient: firstMtlData.ambient || [0.2, 0.2, 0.2],
+        diffuse: firstMtlData.diffuse || [0.8, 0.8, 0.8],
+        specular: firstMtlData.specular || [0.0, 0.0, 0.0],
+        shininess: firstMtlData.shininess || 30,
+        transparency: 1.0,
+        texture: firstMtlData.texture || null,
+        textureTransform: firstMtlData.textureTransform || { xOffset: 0, yOffset: 0, angle: 0, scale: 1.0 }
       });
     }
     this.setMaterial(materialName);
@@ -796,6 +879,47 @@ class OBJExporter {
     const vertexStartIdx = this.vertices.length; // where this model's vertices begin in the master array
 
     let currentObjMaterial = null;
+
+    const getRawVertexByGlobalIndex = (globalIndex) => {
+      const local = globalIndex - (vertexOffset + 1);
+      if (local >= 0) {
+        const ri = local * 3;
+        if (ri + 2 < rawVerts.length) {
+          return [rawVerts[ri], rawVerts[ri + 1], rawVerts[ri + 2]];
+        }
+      }
+
+      const existing = this.vertices[globalIndex - 1];
+      return existing && existing.length === 3 ? existing : null;
+    };
+
+    const buildFallbackNormalIndex = (aIdx, bIdx, cIdx) => {
+      const a = getRawVertexByGlobalIndex(aIdx);
+      const b = getRawVertexByGlobalIndex(bIdx);
+      const c = getRawVertexByGlobalIndex(cIdx);
+      if (!a || !b || !c) return null;
+
+      const ux = b[0] - a[0];
+      const uy = b[1] - a[1];
+      const uz = b[2] - a[2];
+      const vx = c[0] - a[0];
+      const vy = c[1] - a[1];
+      const vz = c[2] - a[2];
+
+      let nx = uy * vz - uz * vy;
+      let ny = uz * vx - ux * vz;
+      let nz = ux * vy - uy * vx;
+
+      const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+      if (len < 1e-8) return null;
+      nx /= len;
+      ny /= len;
+      nz /= len;
+
+      const rotNx = nx * cos - nz * sin;
+      const rotNz = nx * sin + nz * cos;
+      return this.addNormal([rotNx, ny, rotNz]);
+    };
 
     // Reusable face-vertex buffer (avoids per-face array allocation)
     const fvBuf = new Array(16);
@@ -868,9 +992,24 @@ class OBJExporter {
 
         // Fan triangulation (works for tris, quads, and n-gons)
         for (let i = 1; i < faceCount - 1; i++) {
+          const n0 = fvBuf[0].vn;
+          const n1 = fvBuf[i].vn;
+          const n2 = fvBuf[i + 1].vn;
+
+          let nn0 = n0;
+          let nn1 = n1;
+          let nn2 = n2;
+
+          if (nn0 === null || nn1 === null || nn2 === null) {
+            const fallbackNormal = buildFallbackNormalIndex(fvBuf[0].v, fvBuf[i].v, fvBuf[i + 1].v);
+            if (nn0 === null) nn0 = fallbackNormal;
+            if (nn1 === null) nn1 = fallbackNormal;
+            if (nn2 === null) nn2 = fallbackNormal;
+          }
+
           this.faces.push({
             vertices: [fvBuf[0].v, fvBuf[i].v, fvBuf[i + 1].v],
-            normals: [fvBuf[0].vn, fvBuf[i].vn, fvBuf[i + 1].vn],
+            normals: [nn0, nn1, nn2],
             texCoords: [fvBuf[0].vt, fvBuf[i].vt, fvBuf[i + 1].vt],
             material: this.currentMaterial
           });
