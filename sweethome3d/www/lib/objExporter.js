@@ -24,6 +24,7 @@ class OBJExporter {
     this.normalIndex = 1;
     this.texCoordIndex = 1;
     this.precision = 7; // Decimal places for coordinates
+    this.textureHashes = new Map(); // hash -> textureName for O(1) deduplication
 
     // Initialize default materials if available
     this.defaultMaterials = new Map();
@@ -158,13 +159,47 @@ class OBJExporter {
       }
     }
     
-    // Export furniture
+    // Export furniture — parallel fetch, sequential integrate
     if (home.getFurniture) {
       const furniture = home.getFurniture();
-      // Uncomment to debug furniture count: console.log('Found furniture:', furniture ? furniture.length : 0);
       if (furniture && furniture.length > 0) {
+        // Phase 1: Resolve model URLs and prepare metadata (synchronous)
+        const furnitureItems = [];
         for (let i = 0; i < furniture.length; i++) {
-          await this.exportFurniture(furniture[i], `furniture_${i}`, component3D);
+          furnitureItems.push({ piece: furniture[i], name: `furniture_${i}` });
+        }
+
+        // Phase 2: Prefetch all model ZIPs in parallel batches of 6
+        const BATCH_SIZE = 6;
+        const prefetched = new Array(furnitureItems.length);
+        for (let batchStart = 0; batchStart < furnitureItems.length; batchStart += BATCH_SIZE) {
+          const batchEnd = Math.min(batchStart + BATCH_SIZE, furnitureItems.length);
+          const batchPromises = [];
+          for (let i = batchStart; i < batchEnd; i++) {
+            batchPromises.push(
+              this.prefetchFurnitureModel(furnitureItems[i].piece, furnitureItems[i].name)
+                .then(data => { prefetched[i] = data; })
+                .catch(() => { prefetched[i] = null; })
+            );
+          }
+          await Promise.all(batchPromises);
+        }
+
+        // Phase 3: Integrate sequentially (shared state: vertices, faces, etc.)
+        for (let i = 0; i < furnitureItems.length; i++) {
+          const data = prefetched[i];
+          if (data && data.objContent) {
+            const { piece } = furnitureItems[i];
+            const pX = piece.getX ? piece.getX() : 0;
+            const pY = piece.getY ? piece.getY() : 0;
+            const elev = piece.getElevation ? piece.getElevation() : 0;
+            const ang = piece.getAngle ? piece.getAngle() : 0;
+            this.addComment(`Furniture: ${furnitureItems[i].name} - ${piece.getName ? piece.getName() : 'Unknown'}`);
+            await this.integrateOBJContent(data.objContent, pX, pY, elev, ang, furnitureItems[i].name, piece, data.materialTextureMap);
+          } else if (data && data.useBoundingBox) {
+            this.addComment(`Furniture: ${furnitureItems[i].name} - ${furnitureItems[i].piece.getName ? furnitureItems[i].piece.getName() : 'Unknown'}`);
+            this.exportFurnitureBoundingBox(furnitureItems[i].piece, furnitureItems[i].name);
+          }
           furnitureCount++;
         }
       }
@@ -409,6 +444,102 @@ class OBJExporter {
   }
 
   /**
+   * Prefetch a furniture model's ZIP, extract OBJ content + material data.
+   * Returns { objContent, materialTextureMap } or { useBoundingBox: true } on failure.
+   * Does NOT modify shared exporter state (vertices/faces) — safe for parallel calls.
+   */
+  async prefetchFurnitureModel(piece, name) {
+    if (!piece) return null;
+
+    const catalogId = piece.getCatalogId ? piece.getCatalogId() : null;
+    const model = piece.getModel ? piece.getModel() : null;
+
+    let modelURL = null;
+    if (model && model.getURL) modelURL = model.getURL();
+    if (!modelURL && catalogId) modelURL = `lib/resources/models/${catalogId}.zip`;
+
+    if (!modelURL) return { useBoundingBox: true };
+
+    // Resolve JAR / OBJ URLs to ZIP paths
+    if (modelURL.startsWith('jar:')) {
+      const jarMatch = modelURL.match(/jar:[^!]+!\/(.+)/);
+      if (jarMatch) {
+        const fileNameMatch = jarMatch[1].match(/([^\/]+)\.obj$/i);
+        if (fileNameMatch) modelURL = `lib/resources/models/${fileNameMatch[1]}.zip`;
+        else modelURL = jarMatch[1].startsWith('lib/') ? jarMatch[1] : `lib/${jarMatch[1]}`;
+      }
+    } else if (modelURL.endsWith('.obj')) {
+      const fileNameMatch = modelURL.match(/([^\/]+)\.obj$/i);
+      if (fileNameMatch) modelURL = `lib/resources/models/${fileNameMatch[1]}.zip`;
+    }
+
+    try {
+      return await this._fetchAndParseModelZip(modelURL, name);
+    } catch (error) {
+      console.error(`Failed to prefetch model for ${piece.getName ? piece.getName() : name}:`, error.message);
+      return { useBoundingBox: true };
+    }
+  }
+
+  /**
+   * Fetch a model ZIP and extract OBJ content + material texture map.
+   * Textures are added to the exporter (addTexture is safe for concurrent calls since
+   * it only appends to this.textures Map with unique keys).
+   */
+  async _fetchAndParseModelZip(modelURL, name) {
+    return new Promise((resolve, reject) => {
+      ZIPTools.getZIP(modelURL, false, {
+        zipReady: async (zip) => {
+          try {
+            let objFile = null, objFileName = null, mtlFile = null;
+            const textureFiles = [];
+
+            const files = zip.file(/.*/);
+            for (let i = 0; i < files.length; i++) {
+              const fileName = files[i].name.toLowerCase();
+              if (fileName.endsWith('.obj')) { objFile = files[i]; objFileName = files[i].name; }
+              else if (fileName.endsWith('.mtl')) { mtlFile = files[i]; }
+              else if (fileName.match(/\.(jpg|jpeg|png|bmp|gif)$/)) { textureFiles.push(files[i]); }
+            }
+
+            if (!objFile) { reject(new Error('No OBJ file found in model ZIP')); return; }
+
+            // Find matching MTL
+            const expectedMtlName = objFileName.replace(/\.obj$/i, '.mtl');
+            let selectedMtlFile = mtlFile;
+            for (let i = 0; i < files.length; i++) {
+              if (files[i].name.toLowerCase().endsWith(expectedMtlName.toLowerCase()) ||
+                  files[i].name.toLowerCase() === expectedMtlName.toLowerCase()) {
+                selectedMtlFile = files[i]; break;
+              }
+            }
+
+            // Extract textures (addTexture uses hash dedup, safe for concurrent calls)
+            const textureMap = new Map();
+            for (const texFile of textureFiles) {
+              try {
+                const texData = texFile.asUint8Array().buffer;
+                const texBaseName = `furniture_${name}_${texFile.name.split('.')[0]}`;
+                const texName = await this.addTexture(texBaseName, texFile.name, texData);
+                textureMap.set(texFile.name, texName);
+              } catch (e) { console.warn(`Failed to extract texture ${texFile.name}:`, e.message); }
+            }
+
+            // Parse MTL
+            let materialTextureMap = new Map();
+            if (selectedMtlFile) {
+              materialTextureMap = this.parseMTLTextures(selectedMtlFile.asText(), textureMap);
+            }
+
+            resolve({ objContent: objFile.asText(), materialTextureMap });
+          } catch (error) { reject(error); }
+        },
+        zipError: (error) => { reject(new Error(`Failed to load ZIP: ${error}`)); }
+      });
+    });
+  }
+
+  /**
    * Load and export 3D model from URL (ZIP file containing OBJ)
    */
   async exportModelFromURL(modelURL, x, y, elevation, angle, name, piece) {
@@ -467,7 +598,7 @@ class OBJExporter {
             const textureMap = new Map(); // originalFileName -> exportedTextureName
             for (const texFile of textureFiles) {
               try {
-                const texData = await texFile.async('arraybuffer');
+                const texData = texFile.asUint8Array().buffer;
                 const texBaseName = `furniture_${name}_${texFile.name.split('.')[0]}`;
                 const texName = await this.addTexture(texBaseName, texFile.name, texData);
                 textureMap.set(texFile.name, texName);
@@ -604,60 +735,17 @@ class OBJExporter {
    */
   async integrateOBJContent(objContent, x, y, elevation, angle, name, piece, materialTextureMap = new Map()) {
     const lines = objContent.split('\n');
-    const modelVertices = [];
-    const modelNormals = [];
-    const modelTexCoords = [];
-    
+
     // Track the starting indices for this model
     const vertexOffset = this.vertexIndex - 1;
     const normalOffset = this.normalIndex - 1;
     const texCoordOffset = this.texCoordIndex - 1;
-    
-    // Get scale factors
+
+    // Get target dimensions
     const width = piece.getWidth ? piece.getWidth() : 1;
     const depth = piece.getDepth ? piece.getDepth() : 1;
     const height = piece.getHeight ? piece.getHeight() : 1;
-    
-    // Parse the OBJ file to get original bounds
-    let minX = Infinity, maxX = -Infinity;
-    let minY = Infinity, maxY = -Infinity;
-    let minZ = Infinity, maxZ = -Infinity;
-    
-    // First pass: collect vertices to calculate bounds
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith('v ')) {
-        const parts = trimmed.split(/\s+/);
-        const vx = parseFloat(parts[1]);
-        const vy = parseFloat(parts[2]);
-        const vz = parseFloat(parts[3]);
-        
-        minX = Math.min(minX, vx);
-        maxX = Math.max(maxX, vx);
-        minY = Math.min(minY, vy);
-        maxY = Math.max(maxY, vy);
-        minZ = Math.min(minZ, vz);
-        maxZ = Math.max(maxZ, vz);
-      }
-    }
-    
-    // Calculate model dimensions and center
-    const modelWidth = maxX - minX;
-    const modelHeight = maxY - minY;
-    const modelDepth = maxZ - minZ;
-    
-    const centerX = (minX + maxX) / 2;
-    const centerY = minY; // Keep bottom at origin
-    const centerZ = (minZ + maxZ) / 2;
-    
-    // Calculate scale factors
-    const scaleX = modelWidth > 0 ? width / modelWidth : 1;
-    const scaleY = modelHeight > 0 ? height / modelHeight : 1;
-    const scaleZ = modelDepth > 0 ? depth / modelDepth : 1;
-    
-    // Uncomment to debug model scaling: console.log(`    📏 Model bounds: ${modelWidth.toFixed(1)} x ${modelHeight.toFixed(1)} x ${modelDepth.toFixed(1)}`);
-    // Uncomment to debug target dimensions: console.log(`    📐 Scaling to: ${width.toFixed(1)} x ${height.toFixed(1)} x ${depth.toFixed(1)}`);
-    
+
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
 
@@ -686,215 +774,169 @@ class OBJExporter {
     }
     this.setMaterial(materialName);
 
-    // Track current material from OBJ file
+    // Pre-build lowercase lookup maps for O(1) case-insensitive material matching
+    const materialMapLower = new Map();
+    if (typeof materialTextureMap.get === 'function') {
+      for (const [key, value] of materialTextureMap) {
+        materialMapLower.set(key.toLowerCase(), value);
+      }
+    }
+    const defaultMaterialsLower = new Map();
+    if (this.defaultMaterials) {
+      for (const [key, value] of this.defaultMaterials) {
+        defaultMaterialsLower.set(key.toLowerCase(), value);
+      }
+    }
+
+    // ---- Single pass: collect raw vertices + bounds, process normals/UVs/faces/materials ----
+    const rawVerts = []; // store raw vertex positions for deferred transform
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+    let minZ = Infinity, maxZ = -Infinity;
+    const vertexStartIdx = this.vertices.length; // where this model's vertices begin in the master array
+
     let currentObjMaterial = null;
 
-    // Second pass: process and transform geometry
-    for (const line of lines) {
-      const trimmed = line.trim();
+    // Reusable face-vertex buffer (avoids per-face array allocation)
+    const fvBuf = new Array(16);
 
-      // Handle usemtl directive (material assignment)
-      if (trimmed.startsWith('usemtl ')) {
-        currentObjMaterial = trimmed.substring(7).trim();
-        // Try to find the material in the parsed MTL data
-        let mtlData = null;
-        
-        // 1. Try case-insensitive lookup in the ZIP's MTL
-        if (typeof materialTextureMap.get === 'function') { // Ensure it's a Map
-          // direct lookup first
-          mtlData = materialTextureMap.get(currentObjMaterial);
-          
-          // if not found, try case-insensitive
-          if (!mtlData) {
-             const lowerMaterial = currentObjMaterial.toLowerCase();
-             for (const [key, value] of materialTextureMap.entries()) {
-                 if (key.toLowerCase() === lowerMaterial) {
-                     mtlData = value;
-                     break;
-                 }
-             }
-          }
+    for (let lineIdx = 0, lineCount = lines.length; lineIdx < lineCount; lineIdx++) {
+      const trimmed = lines[lineIdx].trim();
+      if (trimmed.length === 0 || trimmed.charCodeAt(0) === 35) continue; // skip empty/'#'
+
+      // Detect line type by first characters (faster than startsWith for hot loop)
+      const c0 = trimmed.charCodeAt(0);
+      const c1 = trimmed.charCodeAt(1);
+
+      if (c0 === 118) { // 'v'
+        if (c1 === 32) {
+          // Vertex: 'v '
+          const parts = trimmed.split(/\s+/);
+          const vx = parseFloat(parts[1]);
+          const vy = parseFloat(parts[2]);
+          const vz = parseFloat(parts[3]);
+
+          // Track bounds incrementally
+          if (vx < minX) minX = vx; if (vx > maxX) maxX = vx;
+          if (vy < minY) minY = vy; if (vy > maxY) maxY = vy;
+          if (vz < minZ) minZ = vz; if (vz > maxZ) maxZ = vz;
+
+          // Store raw position; will transform after bounds are known
+          rawVerts.push(vx, vy, vz);
+          this.vertices.push(null); // placeholder — overwritten after loop
+          this.vertexIndex++;
+
+        } else if (c1 === 110) {
+          // Normal: 'vn'
+          const parts = trimmed.split(/\s+/);
+          const nx = parseFloat(parts[1]);
+          const ny = parseFloat(parts[2]);
+          const nz = parseFloat(parts[3]);
+
+          // Rotate normal (no translation)
+          const rotNx = nx * cos - nz * sin;
+          const rotNz = nx * sin + nz * cos;
+
+          this.normals.push([rotNx, ny, rotNz]);
+          this.normalIndex++;
+
+        } else if (c1 === 116) {
+          // Texture coord: 'vt'
+          const parts = trimmed.split(/\s+/);
+          this.texCoords.push([parseFloat(parts[1]), parseFloat(parts[2])]);
+          this.texCoordIndex++;
         }
 
-        // 2. Fallback to default materials if not found in ZIP
+      } else if (c0 === 102 && c1 === 32) {
+        // Face: 'f '
+        const parts = trimmed.split(/\s+/);
+        const faceCount = parts.length - 1;
+
+        // Parse face vertices into reusable buffer
+        for (let fi = 0; fi < faceCount; fi++) {
+          const indices = parts[fi + 1].split('/');
+          const vIdx = parseInt(indices[0]);
+          const vtIdx = indices[1] && indices[1] !== '' ? parseInt(indices[1]) : null;
+          const vnIdx = indices[2] && indices[2] !== '' ? parseInt(indices[2]) : null;
+
+          fvBuf[fi] = {
+            v: vIdx > 0 ? vIdx + vertexOffset : this.vertexIndex + vIdx,
+            vt: vtIdx !== null ? (vtIdx > 0 ? vtIdx + texCoordOffset : this.texCoordIndex + vtIdx) : null,
+            vn: vnIdx !== null ? (vnIdx > 0 ? vnIdx + normalOffset : this.normalIndex + vnIdx) : null
+          };
+        }
+
+        // Fan triangulation (works for tris, quads, and n-gons)
+        for (let i = 1; i < faceCount - 1; i++) {
+          this.faces.push({
+            vertices: [fvBuf[0].v, fvBuf[i].v, fvBuf[i + 1].v],
+            normals: [fvBuf[0].vn, fvBuf[i].vn, fvBuf[i + 1].vn],
+            texCoords: [fvBuf[0].vt, fvBuf[i].vt, fvBuf[i + 1].vt],
+            material: this.currentMaterial
+          });
+        }
+
+      } else if (c0 === 117) {
+        // usemtl: 'u'
+        if (!trimmed.startsWith('usemtl ')) continue;
+        currentObjMaterial = trimmed.substring(7).trim();
+
+        let mtlData = null;
+        const lowerMaterial = currentObjMaterial.toLowerCase();
+
+        if (materialMapLower.size > 0) {
+          mtlData = materialTextureMap.get(currentObjMaterial) || materialMapLower.get(lowerMaterial) || null;
+        }
         if (!mtlData && this.defaultMaterials) {
-            mtlData = this.defaultMaterials.get(currentObjMaterial);
-            if (!mtlData) {
-                 // Case-insensitive fallback for defaults too
-                 const lowerMaterial = currentObjMaterial.toLowerCase();
-                 for (const [key, value] of this.defaultMaterials.entries()) {
-                     if (key.toLowerCase() === lowerMaterial) {
-                         mtlData = value;
-                         break;
-                     }
-                 }
-            }
-             if (mtlData) {
-                // console.log(`Found material '${currentObjMaterial}' in default materials.`);
-             }
+          mtlData = this.defaultMaterials.get(currentObjMaterial) || defaultMaterialsLower.get(lowerMaterial) || null;
         }
 
         if (mtlData) {
-          // Create a unique material name to avoid conflicts
           const specificMaterialName = `${materialName}_${currentObjMaterial.replace(/[^a-zA-Z0-9_]/g, '')}`;
-          
-          // Check if we already created this specific material
           if (!this.materials.has(specificMaterialName)) {
-              this.materials.set(specificMaterialName, {
-                  name: specificMaterialName,
-                  ambient: mtlData.ambient || [0.2, 0.2, 0.2],
-                  diffuse: mtlData.diffuse || [0.8, 0.8, 0.8],
-                  specular: mtlData.specular || [0.0, 0.0, 0.0],
-                  shininess: mtlData.shininess || 30,
-                  transparency: 1.0,
-                  texture: mtlData.texture || null,
-                  textureTransform: mtlData.textureTransform || { xOffset: 0, yOffset: 0, angle: 0, scale: 1.0 }
-              });
+            this.materials.set(specificMaterialName, {
+              name: specificMaterialName,
+              ambient: mtlData.ambient || [0.2, 0.2, 0.2],
+              diffuse: mtlData.diffuse || [0.8, 0.8, 0.8],
+              specular: mtlData.specular || [0.0, 0.0, 0.0],
+              shininess: mtlData.shininess || 30,
+              transparency: 1.0,
+              texture: mtlData.texture || null,
+              textureTransform: mtlData.textureTransform || { xOffset: 0, yOffset: 0, angle: 0, scale: 1.0 }
+            });
           }
           this.setMaterial(specificMaterialName);
         } else {
           console.warn(`Material '${currentObjMaterial}' not found in MTL or defaults. Using gray.`);
           this.setMaterial(materialName);
         }
-
-
       }
+      // 'o' and 'g' directives are intentionally ignored (no group support needed)
+    }
 
-      if (trimmed.startsWith('v ')) {
-        // Vertex
-        const parts = trimmed.split(/\s+/);
-        let vx = parseFloat(parts[1]);
-        let vy = parseFloat(parts[2]);
-        let vz = parseFloat(parts[3]);
-        
-        // Center the model
-        vx -= centerX;
-        vy -= centerY;
-        vz -= centerZ;
-        
-        // Scale
-        vx *= scaleX;
-        vy *= scaleY;
-        vz *= scaleZ;
-        
-        // Rotate around Y axis
-        const rotX = vx * cos - vz * sin;
-        const rotZ = vx * sin + vz * cos;
-        
-        // Translate to position
-        const finalX = x + rotX;
-        const finalY = elevation + vy;
-        const finalZ = y + rotZ;
-        
-        this.vertices.push([finalX, finalY, finalZ]);
-        this.vertexIndex++;
-        
-      } else if (trimmed.startsWith('vn ')) {
-        // Normal - rotate but don't translate
-        const parts = trimmed.split(/\s+/);
-        let nx = parseFloat(parts[1]);
-        let ny = parseFloat(parts[2]);
-        let nz = parseFloat(parts[3]);
-        
-        // Rotate normal
-        const rotNx = nx * cos - nz * sin;
-        const rotNz = nx * sin + nz * cos;
-        
-        this.normals.push([rotNx, ny, rotNz]);
-        this.normalIndex++;
-        
-      } else if (trimmed.startsWith('vt ')) {
-        // Texture coordinate
-        const parts = trimmed.split(/\s+/);
-        const u = parseFloat(parts[1]);
-        const v = parseFloat(parts[2]);
-        
-        this.texCoords.push([u, v]);
-        this.texCoordIndex++;
-        
-      } else if (trimmed.startsWith('f ')) {
-        // Face
-        const parts = trimmed.split(/\s+/).slice(1);
-        
-        // Parse face vertices
-        const faceVerts = [];
-        for (const part of parts) {
-          const indices = part.split('/');
-          const vIdx = parseInt(indices[0]);
-          const vtIdx = indices[1] && indices[1] !== '' ? parseInt(indices[1]) : null;
-          const vnIdx = indices[2] && indices[2] !== '' ? parseInt(indices[2]) : null;
-          
-          // Convert to absolute indices (OBJ uses 1-based indexing)
-          let absoluteV, absoluteVt, absoluteVn;
-          
-          if (vIdx > 0) {
-            absoluteV = vIdx + vertexOffset;
-          } else {
-            // Negative indices count from the end
-            absoluteV = this.vertexIndex + vIdx;
-          }
-          
-          if (vtIdx !== null) {
-            if (vtIdx > 0) {
-              absoluteVt = vtIdx + texCoordOffset;
-            } else {
-              absoluteVt = this.texCoordIndex + vtIdx;
-            }
-          } else {
-            absoluteVt = null;
-          }
-          
-          if (vnIdx !== null) {
-            if (vnIdx > 0) {
-              absoluteVn = vnIdx + normalOffset;
-            } else {
-              absoluteVn = this.normalIndex + vnIdx;
-            }
-          } else {
-            absoluteVn = null;
-          }
-          
-          faceVerts.push({
-            v: absoluteV,
-            vt: absoluteVt,
-            vn: absoluteVn
-          });
-        }
-        
-        // Triangulate face if needed (convert quads to triangles)
-        if (faceVerts.length === 3) {
-          this.faces.push({
-            vertices: [faceVerts[0].v, faceVerts[1].v, faceVerts[2].v],
-            normals: [faceVerts[0].vn, faceVerts[1].vn, faceVerts[2].vn],
-            texCoords: [faceVerts[0].vt, faceVerts[1].vt, faceVerts[2].vt],
-            material: this.currentMaterial
-          });
-        } else if (faceVerts.length === 4) {
-          // Split quad into 2 triangles
-          this.faces.push({
-            vertices: [faceVerts[0].v, faceVerts[1].v, faceVerts[2].v],
-            normals: [faceVerts[0].vn, faceVerts[1].vn, faceVerts[2].vn],
-            texCoords: [faceVerts[0].vt, faceVerts[1].vt, faceVerts[2].vt],
-            material: this.currentMaterial
-          });
-          this.faces.push({
-            vertices: [faceVerts[0].v, faceVerts[2].v, faceVerts[3].v],
-            normals: [faceVerts[0].vn, faceVerts[2].vn, faceVerts[3].vn],
-            texCoords: [faceVerts[0].vt, faceVerts[2].vt, faceVerts[3].vt],
-            material: this.currentMaterial
-          });
-        } else if (faceVerts.length > 4) {
-          // Fan triangulation for polygons with more than 4 vertices
-          for (let i = 1; i < faceVerts.length - 1; i++) {
-            this.faces.push({
-              vertices: [faceVerts[0].v, faceVerts[i].v, faceVerts[i + 1].v],
-              normals: [faceVerts[0].vn, faceVerts[i].vn, faceVerts[i + 1].vn],
-              texCoords: [faceVerts[0].vt, faceVerts[i].vt, faceVerts[i + 1].vt],
-              material: this.currentMaterial
-            });
-          }
-        }
-      }
+    // ---- Deferred vertex transform: now that bounds are known, transform raw vertices in-place ----
+    const modelWidth = maxX - minX;
+    const modelHeight = maxY - minY;
+    const modelDepth = maxZ - minZ;
+
+    const centerX = (minX + maxX) / 2;
+    const centerY = minY; // Keep bottom at origin
+    const centerZ = (minZ + maxZ) / 2;
+
+    const scaleX = modelWidth > 0 ? width / modelWidth : 1;
+    const scaleY = modelHeight > 0 ? height / modelHeight : 1;
+    const scaleZ = modelDepth > 0 ? depth / modelDepth : 1;
+
+    for (let i = 0, vi = vertexStartIdx, len = rawVerts.length; i < len; i += 3, vi++) {
+      // Center, scale, rotate, translate
+      let vx = (rawVerts[i] - centerX) * scaleX;
+      let vy = (rawVerts[i + 1] - centerY) * scaleY;
+      let vz = (rawVerts[i + 2] - centerZ) * scaleZ;
+
+      const rotX = vx * cos - vz * sin;
+      const rotZ = vx * sin + vz * cos;
+
+      this.vertices[vi] = [x + rotX, elevation + vy, y + rotZ];
     }
   }
 
@@ -1458,117 +1500,99 @@ class OBJExporter {
    * Build OBJ file content
    */
   buildOBJContent() {
-    let content = '';
-    
+    const p = this.precision;
+    // Pre-allocate array: comments + vertices + normals + texCoords + faces + material switches
+    const estimatedLines = 4 + this.vertices.length + this.normals.length + this.texCoords.length + this.faces.length * 2;
+    const parts = new Array(estimatedLines);
+    let idx = 0;
+
     // Write vertices
-    content += `# Vertices: ${this.vertices.length}\n`;
-    for (const v of this.vertices) {
-      content += `v ${this.formatNumber(v[0])} ${this.formatNumber(v[1])} ${this.formatNumber(v[2])}\n`;
+    parts[idx++] = `# Vertices: ${this.vertices.length}\n`;
+    for (let i = 0, len = this.vertices.length; i < len; i++) {
+      const v = this.vertices[i];
+      parts[idx++] = `v ${v[0].toFixed(p)} ${v[1].toFixed(p)} ${v[2].toFixed(p)}\n`;
     }
-    content += '\n';
-    
+    parts[idx++] = '\n';
+
     // Write normals
-    content += `# Normals: ${this.normals.length}\n`;
-    for (const n of this.normals) {
-      content += `vn ${this.formatNumber(n[0])} ${this.formatNumber(n[1])} ${this.formatNumber(n[2])}\n`;
+    parts[idx++] = `# Normals: ${this.normals.length}\n`;
+    for (let i = 0, len = this.normals.length; i < len; i++) {
+      const n = this.normals[i];
+      parts[idx++] = `vn ${n[0].toFixed(p)} ${n[1].toFixed(p)} ${n[2].toFixed(p)}\n`;
     }
-    content += '\n';
-    
+    parts[idx++] = '\n';
+
     // Write texture coordinates if any
     if (this.texCoords.length > 0) {
-      content += `# Texture coordinates: ${this.texCoords.length}\n`;
-      for (const tc of this.texCoords) {
-        content += `vt ${this.formatNumber(tc[0])} ${this.formatNumber(tc[1])}\n`;
+      parts[idx++] = `# Texture coordinates: ${this.texCoords.length}\n`;
+      for (let i = 0, len = this.texCoords.length; i < len; i++) {
+        const tc = this.texCoords[i];
+        parts[idx++] = `vt ${tc[0].toFixed(p)} ${tc[1].toFixed(p)}\n`;
       }
-      content += '\n';
+      parts[idx++] = '\n';
     }
-    
+
     // Write faces grouped by material
-    content += `# Faces: ${this.faces.length}\n`;
+    parts[idx++] = `# Faces: ${this.faces.length}\n`;
     let currentMat = null;
-    
-    for (const face of this.faces) {
+
+    for (let i = 0, len = this.faces.length; i < len; i++) {
+      const face = this.faces[i];
       if (face.material !== currentMat) {
         currentMat = face.material;
-        content += `\nusemtl ${currentMat}\n`;
+        parts[idx++] = `\nusemtl ${currentMat}\n`;
       }
-      
-      // Face format: f v1/vt1/vn1 v2/vt2/vn2 v3/vt3/vn3
-      // Handle different combinations of texture coords and normals
+
       const hasTexCoords = face.texCoords[0] !== null && face.texCoords[0] !== undefined;
       const hasNormals = face.normals[0] !== null && face.normals[0] !== undefined;
-      
+
       if (hasTexCoords && hasNormals) {
-        // v/vt/vn
-        content += `f ${face.vertices[0]}/${face.texCoords[0]}/${face.normals[0]} `;
-        content += `${face.vertices[1]}/${face.texCoords[1]}/${face.normals[1]} `;
-        content += `${face.vertices[2]}/${face.texCoords[2]}/${face.normals[2]}\n`;
+        parts[idx++] = `f ${face.vertices[0]}/${face.texCoords[0]}/${face.normals[0]} ${face.vertices[1]}/${face.texCoords[1]}/${face.normals[1]} ${face.vertices[2]}/${face.texCoords[2]}/${face.normals[2]}\n`;
       } else if (hasNormals) {
-        // v//vn (no texture coordinates)
-        content += `f ${face.vertices[0]}//${face.normals[0]} `;
-        content += `${face.vertices[1]}//${face.normals[1]} `;
-        content += `${face.vertices[2]}//${face.normals[2]}\n`;
+        parts[idx++] = `f ${face.vertices[0]}//${face.normals[0]} ${face.vertices[1]}//${face.normals[1]} ${face.vertices[2]}//${face.normals[2]}\n`;
       } else if (hasTexCoords) {
-        // v/vt (no normals)
-        content += `f ${face.vertices[0]}/${face.texCoords[0]} `;
-        content += `${face.vertices[1]}/${face.texCoords[1]} `;
-        content += `${face.vertices[2]}/${face.texCoords[2]}\n`;
+        parts[idx++] = `f ${face.vertices[0]}/${face.texCoords[0]} ${face.vertices[1]}/${face.texCoords[1]} ${face.vertices[2]}/${face.texCoords[2]}\n`;
       } else {
-        // v only (no texture coordinates or normals)
-        content += `f ${face.vertices[0]} `;
-        content += `${face.vertices[1]} `;
-        content += `${face.vertices[2]}\n`;
+        parts[idx++] = `f ${face.vertices[0]} ${face.vertices[1]} ${face.vertices[2]}\n`;
       }
     }
-    
-    return content;
+
+    // Trim unused pre-allocated slots and join
+    parts.length = idx;
+    return parts.join('');
   }
 
   /**
    * Build MTL file content
    */
   buildMTLContent() {
+    const p = this.precision;
     const date = new Date().toISOString();
-    let content = `# MTL file generated by OBJExporter.js
-# Date: ${date}
+    const parts = [`# MTL file generated by OBJExporter.js\n# Date: ${date}\n\n`];
 
-`;
-    
     for (const [name, mat] of this.materials) {
-      content += `newmtl ${name}\n`;
-      
-      // Unity Compatibility:
-      // 1. Do NOT export Ka (Ambient) - Unity ignores it or uses it for emission
-      // content += `Ka ${this.formatNumber(mat.ambient[0])} ${this.formatNumber(mat.ambient[1])} ${this.formatNumber(mat.ambient[2])}\n`;
-      
-      // 2. Adjust Kd (Diffuse) based on texture presence
+      parts.push(`newmtl ${name}\n`);
+
+      // Unity Compatibility: no Ka export, Ks forced to black
       if (mat.texture) {
-        // If texture exists, Kd must be WHITE (1,1,1) to avoid multiplying texture color
-        content += `Kd 1.000 1.000 1.000\n`;
+        parts.push(`Kd 1.000 1.000 1.000\n`);
       } else {
-        content += `Kd ${this.formatNumber(mat.diffuse[0])} ${this.formatNumber(mat.diffuse[1])} ${this.formatNumber(mat.diffuse[2])}\n`;
+        parts.push(`Kd ${mat.diffuse[0].toFixed(p)} ${mat.diffuse[1].toFixed(p)} ${mat.diffuse[2].toFixed(p)}\n`);
       }
 
-      // 3. Adjust Ks (Specular) - Default to Black (0,0,0) for non-metallic look
-      // Unity Standard Shader treats non-black Ks as metallic/specular intensity
-      content += `Ks 0.000 0.000 0.000\n`; 
-      // content += `Ks ${this.formatNumber(mat.specular[0])} ${this.formatNumber(mat.specular[1])} ${this.formatNumber(mat.specular[2])}\n`;
-      
-      content += `Ns ${this.formatNumber(mat.shininess)}\n`;
-      content += `d ${this.formatNumber(mat.transparency)}\n`;
-      content += `illum 2\n`;
+      parts.push(`Ks 0.000 0.000 0.000\n`);
+      parts.push(`Ns ${mat.shininess.toFixed(p)}\n`);
+      parts.push(`d ${mat.transparency.toFixed(p)}\n`);
+      parts.push(`illum 2\n`);
 
-      // Add texture reference if exists (FLATTENED PATH)
       if (mat.texture) {
-        // Unity Compatibility: Use filename only, no folder paths
-        // This matches the flat structure in the ZIP root
-        content += `map_Kd ${mat.texture}\n`;
+        parts.push(`map_Kd ${mat.texture}\n`);
       }
 
-      content += '\n';
+      parts.push('\n');
     }
-    
-    return content;
+
+    return parts.join('');
   }
 
   /**
@@ -1727,8 +1751,8 @@ class OBJExporter {
    * @returns {string} - Unique texture filename for use in MTL file
    */
   async addTexture(baseName, textureURL, textureData) {
-    // 1. Check for duplicate binary data (reuse if identical)
-    const duplicate = this.findDuplicateTexture(textureData);
+    // 1. Check for duplicate binary data via hash (O(1) lookup)
+    const duplicate = await this.findDuplicateTexture(textureData);
     if (duplicate) {
       console.log(`✓ Texture ${baseName} is duplicate of ${duplicate}, reusing`);
       return duplicate;
@@ -1740,9 +1764,10 @@ class OBJExporter {
     // 3. Generate unique filename
     const textureName = this.generateUniqueTextureName(baseName, extension);
 
-    // 4. Store binary image data in Map
-    // ArrayBuffer will be written to ZIP as image file by JSZip
+    // 4. Store binary image data and its hash for future dedup
     this.textures.set(textureName, textureData);
+    const hashHex = await this._hashTextureData(textureData);
+    this.textureHashes.set(hashHex, textureName);
 
     console.log(`✓ Added texture: ${textureName} (${(textureData.byteLength / 1024).toFixed(1)} KB)`);
 
@@ -1778,37 +1803,39 @@ class OBJExporter {
   }
 
   /**
-   * Check if texture data is duplicate (same binary content)
+   * Check if texture data is duplicate using hash-based O(1) lookup
    * @param {ArrayBuffer} textureData - Binary texture data to check
-   * @returns {string|null} - Existing texture name if duplicate, null if unique
+   * @returns {Promise<string|null>} - Existing texture name if duplicate, null if unique
    */
-  findDuplicateTexture(textureData) {
-    // Simple implementation: compare size first, then binary content
-    const newSize = textureData.byteLength;
+  async findDuplicateTexture(textureData) {
+    const hashHex = await this._hashTextureData(textureData);
+    return this.textureHashes.get(hashHex) || null;
+  }
 
-    for (const [name, existingData] of this.textures) {
-      if (existingData.byteLength !== newSize) {
-        continue;
+  /**
+   * Compute a fast hash for texture deduplication.
+   * Uses SHA-256 via Web Crypto when available, falls back to FNV-1a.
+   * @param {ArrayBuffer} data
+   * @returns {Promise<string>}
+   */
+  async _hashTextureData(data) {
+    if (typeof crypto !== 'undefined' && crypto.subtle) {
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = new Uint8Array(hashBuffer);
+      let hex = '';
+      for (let i = 0; i < hashArray.length; i++) {
+        hex += hashArray[i].toString(16).padStart(2, '0');
       }
-
-      // Compare binary content
-      const newBytes = new Uint8Array(textureData);
-      const existingBytes = new Uint8Array(existingData);
-
-      let identical = true;
-      for (let i = 0; i < newSize; i++) {
-        if (newBytes[i] !== existingBytes[i]) {
-          identical = false;
-          break;
-        }
-      }
-
-      if (identical) {
-        return name;
-      }
+      return hex;
     }
-
-    return null;
+    // Fallback: FNV-1a 32-bit (fast, good distribution for dedup)
+    const bytes = new Uint8Array(data);
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < bytes.length; i++) {
+      hash ^= bytes[i];
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return (hash >>> 0).toString(16);
   }
 
   /**

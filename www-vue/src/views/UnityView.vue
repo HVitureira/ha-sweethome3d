@@ -34,6 +34,7 @@
       class="unity-frame"
       :src="iframeSrc"
       allow="autoplay; fullscreen"
+      allowfullscreen
       title="Smart Home 3D Visualizer"
     />
   </div>
@@ -131,6 +132,7 @@ onMounted(async () => {
       if (selectedHomeId.value) sendLoadHome(selectedHomeId.value)
     }, 3000)
   })
+
 })
 
 watch(() => route.path, (path) => {
