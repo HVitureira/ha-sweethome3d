@@ -1,15 +1,6 @@
-ARG BUILD_FROM
-ARG BUILD_ARCH
-ARG BUILD_VERSION
-
-# Stage 1: Build Vue 3 frontend
-# Context is ha-sweethome3d/ root, so www-vue/ and sweethome3d/ are both accessible
-FROM node:20-alpine AS vue-builder
-WORKDIR /build
-COPY www-vue/package.json ./
-RUN npm install
-COPY www-vue/ ./
-RUN rm -f package-lock.json && npm install && npm run build
+ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base:3.20
+ARG BUILD_ARCH=amd64
+ARG BUILD_VERSION=dev
 
 # Stage 2: Runtime image
 FROM ${BUILD_FROM}
@@ -37,26 +28,20 @@ RUN apk add --no-cache \
     rc-update del php-fpm82 default || true
 
 # Copy nginx configuration
-COPY sweethome3d/rootfs/etc/nginx/ /etc/nginx/
+COPY rootfs/etc/nginx/ /etc/nginx/
 
 # Copy PHP-FPM configuration
-COPY sweethome3d/rootfs/etc/php82/ /etc/php82/
+COPY rootfs/etc/php82/ /etc/php82/
 
-# Copy SweetHome3D lib files (lib/, resources/, CSS, etc.)
-COPY sweethome3d/www/ /var/www/html/
-
-# Overlay Vue build on top: replaces index.html and adds assets/
-COPY --from=vue-builder /build/dist/ /var/www/html/
-
-# Copy Unity WebGL build (pre-built, placed at ha-sweethome3d/unity-build/)
-COPY unity-build/ /var/www/html/unity-visualizer/
+# Copy packaged web app files
+COPY www/ /var/www/html/
 
 # Copy startup script
-COPY sweethome3d/start.sh /start.sh
+COPY start.sh /start.sh
 
-# Copy startup script and services (for Home Assistant compatibility)
-COPY sweethome3d/rootfs/etc/cont-init.d/ /etc/cont-init.d/
-COPY sweethome3d/rootfs/etc/services.d/ /etc/services.d/
+# Copy init scripts and services (for Home Assistant compatibility)
+COPY rootfs/etc/cont-init.d/ /etc/cont-init.d/
+COPY rootfs/etc/services.d/ /etc/services.d/
 
 # Set permissions
 RUN chmod a+x /etc/cont-init.d/* && \

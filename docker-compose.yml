@@ -1,13 +1,11 @@
 # Docker Compose for local testing of SweetHome3D Add-on
 # Use this to test the addon locally before deploying to Home Assistant
 
-version: '3.8'
-
 services:
   sweethome3d:
     build:
-      context: .
-      dockerfile: sweethome3d/Dockerfile
+      context: ./sweethome3d
+      dockerfile: Dockerfile
       args:
         BUILD_FROM: alpine:3.20
     ports:

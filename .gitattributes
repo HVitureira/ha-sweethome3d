@@ -1,0 +1,4 @@
+# Enforce LF for executable scripts used in Linux containers
+*.sh text eol=lf
+sweethome3d/rootfs/etc/services.d/**/run text eol=lf
+sweethome3d/rootfs/etc/services.d/**/finish text eol=lf
