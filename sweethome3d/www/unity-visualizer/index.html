@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en-us">
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <title>Unity Web Player | My project</title>
+  <link rel="shortcut icon" href="TemplateData/favicon.ico">
+  <link rel="stylesheet" href="TemplateData/style.css">
+
+  <script>
+    // Smart Home Configuration — loaded from localStorage (written by the Vue settings panel).
+    // Falls back to safe defaults if not yet configured.
+    (function () {
+      var STORAGE_KEY = 'ha-smart-home-settings';
+      var stored = {};
+      try {
+        var raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) stored = JSON.parse(raw);
+      } catch (e) {
+        console.warn('[SmartHome] Failed to read settings from localStorage:', e);
+      }
+
+      function get(key, fallback) {
+        var val = stored[key];
+        return (val !== undefined && val !== null && val !== '') ? val : fallback;
+      }
+
+      window.smartHomeConfig = {
+        sensorBridgeType: get('sensorBridgeType', 0),
+        forceHomeAssistantInEditor: get('forceHomeAssistantInEditor', false),
+
+        mqtt: {
+          host: get('brokerIP', ''),
+          port: get('brokerPort', 1883),
+          username: get('mqttUsername', ''),
+          password: get('mqttPassword', ''),
+        },
+
+        homeAssistant: {
+          address: get('homeAssistantAddress', ''),
+          token: get('homeAssistantAccessToken', ''),
+          useSSL: get('useSSL', true),
+          trackedEntities: get('trackedEntities', []),
+        },
+
+        sensorTopics: [],
+        lightMappings: [],
+
+        visualization: {
+          updateInterval: get('updateInterval', 0.5),
+          maxParticles: get('maxParticles', 5000),
+          optimizeForWebGL: get('optimizeForWebGL', true),
+          minTemp: get('minTemp', 18),
+          maxTemp: get('maxTemp', 35),
+          interpolationPower: get('interpolationPower', 3.95),
+        },
+
+        connection: {
+          reconnectDelay: get('reconnectDelay', 5),
+          maxReconnectAttempts: get('maxReconnectAttempts', 10),
+          connectionTimeout: get('connectionTimeout', 30),
+        },
+
+        interaction: {
+          lightEntity: '',
+          brightnessChangeTime: 4,
+          switchDetectionDistance: 3,
+        },
+      };
+
+      // Fallback: if connection fields are empty, try ha-config.json (HA addon options).
+      // This covers the case where the iframe loads before the Vue store writes to localStorage.
+      // Uses synchronous XHR because this runs before Unity loads — blocking is acceptable here.
+      if (!window.smartHomeConfig.homeAssistant.address || !window.smartHomeConfig.homeAssistant.token) {
+        try {
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', '../ha-config.json', false);
+          xhr.send();
+          if (xhr.status === 200) {
+            var addon = JSON.parse(xhr.responseText);
+            var ha = window.smartHomeConfig.homeAssistant;
+            if (!ha.address && addon.homeAssistantAddress) ha.address = addon.homeAssistantAddress;
+            if (!ha.token && addon.homeAssistantAccessToken) ha.token = addon.homeAssistantAccessToken;
+            if (addon.useSSL !== undefined) ha.useSSL = addon.useSSL;
+            if (addon.trackedEntities && addon.trackedEntities.length > 0 && ha.trackedEntities.length === 0) {
+              ha.trackedEntities = addon.trackedEntities;
+            }
+            console.log('[SmartHome] Loaded connection config from ha-config.json (addon options)');
+          }
+        } catch (e) {
+          // Standalone mode or dev — no ha-config.json available, that's fine
+        }
+      }
+
+      // Accept live config updates from the parent Vue app (UnityView.vue postMessage)
+      // Also handles LOAD_HOME messages to switch the active home in Unity.
+      window.pendingLoadHome = null; // Queue LOAD_HOME if Unity not ready yet
+
+      window.addEventListener('message', function (event) {
+        if (!event.data) return;
+
+        // ── Config update ──────────────────────────────────────────────────
+        if (event.data.type === 'SMART_HOME_CONFIG_UPDATE') {
+          var c = event.data.config;
+          if (!c) return;
+
+          var ha = window.smartHomeConfig.homeAssistant;
+          ha.address = c.homeAssistantAddress || ha.address;
+          ha.token = c.homeAssistantAccessToken || ha.token;
+          ha.useSSL = (c.useSSL !== undefined) ? c.useSSL : ha.useSSL;
+          ha.trackedEntities = c.trackedEntities || ha.trackedEntities;
+
+          var viz = window.smartHomeConfig.visualization;
+          viz.minTemp = (c.minTemp !== undefined) ? c.minTemp : viz.minTemp;
+          viz.maxTemp = (c.maxTemp !== undefined) ? c.maxTemp : viz.maxTemp;
+          viz.interpolationPower = (c.interpolationPower !== undefined) ? c.interpolationPower : viz.interpolationPower;
+          viz.updateInterval = (c.updateInterval !== undefined) ? c.updateInterval : viz.updateInterval;
+
+          var conn = window.smartHomeConfig.connection;
+          conn.reconnectDelay = (c.reconnectDelay !== undefined) ? c.reconnectDelay : conn.reconnectDelay;
+          conn.maxReconnectAttempts = (c.maxReconnectAttempts !== undefined) ? c.maxReconnectAttempts : conn.maxReconnectAttempts;
+
+          console.log('[SmartHome] Config updated via postMessage. HA address:', window.smartHomeConfig.homeAssistant.address);
+          return;
+        }
+
+        // ── Load Home ──────────────────────────────────────────────────────
+        if (event.data.type === 'LOAD_HOME') {
+          console.log('[SmartHome] LOAD_HOME received for homeId:', event.data.homeId);
+          var payload = JSON.stringify({ homeId: event.data.homeId, baseUrl: event.data.baseUrl });
+          if (window.unityInstance) {
+            window.unityInstance.SendMessage('SceneSetup', 'LoadHomeFromWeb', payload);
+          } else {
+            // Unity not ready yet — queue it
+            window.pendingLoadHome = payload;
+          }
+        }
+      });
+
+      console.log('[SmartHome] Config ready. HA address:',
+        window.smartHomeConfig.homeAssistant.address || '(not configured — set in HA Add-on Configuration)');
+    })();
+
+    // Function to provide configuration to Unity (called by WebGLConfig.jslib)
+    window.getSmartHomeConfig = function () {
+      console.log("Unity requesting smart home configuration");
+
+      // Create flattened configuration object that matches C# ConfigurationData structure
+      var unityConfig = {
+        // Smart Home Bridge Configuration
+        sensorBridgeType: window.smartHomeConfig.sensorBridgeType,
+        forceHomeAssistantInEditor: window.smartHomeConfig.forceHomeAssistantInEditor,
+
+        // MQTT Configuration (flattened)
+        brokerIP: window.smartHomeConfig.mqtt.host,
+        brokerPort: window.smartHomeConfig.mqtt.port,
+        mqttUsername: window.smartHomeConfig.mqtt.username,
+        mqttPassword: window.smartHomeConfig.mqtt.password,
+        useWebSockets: true,
+        sensorTopics: window.smartHomeConfig.sensorTopics,
+
+        // Home Assistant Configuration (flattened)
+        homeAssistantAddress: window.smartHomeConfig.homeAssistant.address,
+        homeAssistantAccessToken: window.smartHomeConfig.homeAssistant.token,
+        useSSL: window.smartHomeConfig.homeAssistant.useSSL,
+        trackedEntities: window.smartHomeConfig.homeAssistant.trackedEntities,
+
+        // Visualization Settings (flattened)
+        updateInterval: window.smartHomeConfig.visualization.updateInterval,
+        maxParticles: window.smartHomeConfig.visualization.maxParticles,
+        optimizeForWebGL: window.smartHomeConfig.visualization.optimizeForWebGL,
+        minTemp: window.smartHomeConfig.visualization.minTemp,
+        maxTemp: window.smartHomeConfig.visualization.maxTemp,
+        interpolationPower: window.smartHomeConfig.visualization.interpolationPower,
+
+        // Connection Settings (flattened)
+        reconnectDelay: window.smartHomeConfig.connection.reconnectDelay,
+        maxReconnectAttempts: window.smartHomeConfig.connection.maxReconnectAttempts,
+        connectionTimeout: window.smartHomeConfig.connection.connectionTimeout
+      };
+
+      console.log("Flattened Unity configuration:", unityConfig);
+      return JSON.stringify(unityConfig);
+    };
+
+    // Function to refresh configuration (if needed)
+    window.refreshConfiguration = function () {
+      console.log("Configuration refresh requested");
+      // Could be used to reload config from external source
+    };
+
+    // Detect if running in Home Assistant
+    function isInHomeAssistant() {
+      return window.location.pathname.includes('/api/hassio_ingress/');
+    }
+
+    // Auto-detect Home Assistant environment and adjust configuration
+    if (isInHomeAssistant()) {
+      console.log("[SmartHome] Running in Home Assistant ingress environment");
+
+      // Force Home Assistant bridge when running as HA add-on
+      window.smartHomeConfig.sensorBridgeType = 2;
+
+      // Auto-detect HA address from current location if not configured
+      var ha = window.smartHomeConfig.homeAssistant;
+      if (!ha.address) {
+        ha.address = window.location.host;
+        ha.useSSL = (window.location.protocol === 'https:');
+        console.log("[SmartHome] Auto-detected HA address:", ha.address, "SSL:", ha.useSSL);
+      }
+    } else {
+      console.log("[SmartHome] Running in standalone web environment");
+      // Auto bridge type — will select HomeAssistant for WebGL platform
+      window.smartHomeConfig.sensorBridgeType = 0;
+    }
+
+  </script>
+</head>
+
+<body>
+  <div id="unity-container" class="unity-desktop">
+    <canvas id="unity-canvas" width=960 height=600 tabindex="-1"></canvas>
+    <div id="unity-loading-bar">
+      <div id="unity-logo"></div>
+      <div id="unity-progress-bar-empty">
+        <div id="unity-progress-bar-full"></div>
+      </div>
+    </div>
+    <div id="unity-warning"> </div>
+    <div id="unity-footer">
+      <div id="unity-logo-title-footer"></div>
+      <div id="unity-fullscreen-button"></div>
+      <div id="unity-build-title">My project</div>
+    </div>
+  </div>
+  <script>
+    var canvas = document.querySelector("#unity-canvas");
+
+    // Shows a temporary message banner/ribbon for a few seconds, or
+    // a permanent error message on top of the canvas if type=='error'.
+    // If type=='warning', a yellow highlight color is used.
+    // Modify or remove this function to customize the visually presented
+    // way that non-critical warnings and error messages are presented to the
+    // user.
+    function unityShowBanner(msg, type) {
+      var warningBanner = document.querySelector("#unity-warning");
+      function updateBannerVisibility() {
+        warningBanner.style.display = warningBanner.children.length ? 'block' : 'none';
+      }
+      var div = document.createElement('div');
+      div.innerHTML = msg;
+      warningBanner.appendChild(div);
+      if (type == 'error') div.style = 'background: red; padding: 10px;';
+      else {
+        if (type == 'warning') div.style = 'background: yellow; padding: 10px;';
+        setTimeout(function () {
+          warningBanner.removeChild(div);
+          updateBannerVisibility();
+        }, 5000);
+      }
+      updateBannerVisibility();
+    }
+
+    var buildUrl = "Build";
+    var loaderUrl = buildUrl + "/unity-build.loader.js";
+    var config = {
+      arguments: [],
+      dataUrl: buildUrl + "/unity-build.data.br",
+      frameworkUrl: buildUrl + "/unity-build.framework.js.br",
+      codeUrl: buildUrl + "/unity-build.wasm.br",
+      streamingAssetsUrl: "StreamingAssets",
+      companyName: "DefaultCompany",
+      productName: "My project",
+      productVersion: "0.1.0",
+      showBanner: unityShowBanner,
+    };
+
+    // By default, Unity keeps WebGL canvas render target size matched with
+    // the DOM size of the canvas element (scaled by window.devicePixelRatio)
+    // Set this to false if you want to decouple this synchronization from
+    // happening inside the engine, and you would instead like to size up
+    // the canvas DOM size and WebGL render target sizes yourself.
+    // config.matchWebGLToCanvasSize = false;
+
+    // If you would like all file writes inside Unity Application.persistentDataPath
+    // directory to automatically persist so that the contents are remembered when
+    // the user revisits the site the next time, uncomment the following line:
+    // config.autoSyncPersistentDataPath = true;
+    // This autosyncing is currently not the default behavior to avoid regressing
+    // existing user projects that might rely on the earlier manual
+    // JS_FileSystem_Sync() behavior, but in future Unity version, this will be
+    // expected to change.
+
+    if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+      // Mobile device style: fill the whole browser client area with the game canvas:
+
+      var meta = document.createElement('meta');
+      meta.name = 'viewport';
+      meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
+      document.getElementsByTagName('head')[0].appendChild(meta);
+      document.querySelector("#unity-container").className = "unity-mobile";
+      canvas.className = "unity-mobile";
+
+      // To lower canvas resolution on mobile devices to gain some
+      // performance, uncomment the following line:
+      // config.devicePixelRatio = 1;
+
+    } else {
+      // Desktop style: Render the game canvas in a window that can be maximized to fullscreen:
+      canvas.style.width = "960px";
+      canvas.style.height = "600px";
+    }
+
+    document.querySelector("#unity-loading-bar").style.display = "block";
+
+    var script = document.createElement("script");
+    script.src = loaderUrl;
+    script.onload = () => {
+      createUnityInstance(canvas, config, (progress) => {
+        document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
+      }).then((unityInstance) => {
+        window.unityInstance = unityInstance;
+        console.log("Unity instance created and stored globally");
+
+        document.querySelector("#unity-loading-bar").style.display = "none";
+        document.querySelector("#unity-fullscreen-button").onclick = () => {
+          unityInstance.SetFullscreen(1);
+        };
+
+        // Deliver any LOAD_HOME message that arrived before Unity was ready
+        if (window.pendingLoadHome) {
+          console.log('[SmartHome] Delivering queued LOAD_HOME to Unity');
+          unityInstance.SendMessage('SceneSetup', 'LoadHomeFromWeb', window.pendingLoadHome);
+          window.pendingLoadHome = null;
+        }
+
+        console.log("Unity instance ready. Configuration will be provided via jslib RequestWebGLConfiguration() call.");
+        console.log("Smart Home Config ready with HA Token length:",
+          window.smartHomeConfig?.homeAssistant?.token?.length || 0);
+
+      }).catch((message) => {
+        console.error("Unity failed to load:", message);
+        alert(message);
+      });
+    };
+
+    document.body.appendChild(script);
+  </script>
+</body>
+
+</html>
