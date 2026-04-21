@@ -78,13 +78,31 @@ function sendConfigToIframe() {
   )
 }
 
+function getUnityDataBaseUrl(): string {
+  const { origin, pathname } = window.location
+  let basePath = pathname
+
+  // If this is the Unity iframe route, strip that segment.
+  const unitySegment = '/unity-visualizer'
+  const unityIndex = basePath.indexOf(unitySegment)
+  if (unityIndex >= 0) {
+    basePath = basePath.slice(0, unityIndex)
+  }
+
+  // Normalize trailing slashes while preserving root.
+  basePath = basePath.replace(/\/+$/, '')
+
+  return basePath ? `${origin}${basePath}` : origin
+}
+
 function sendLoadHome(homeId: string) {
   if (!iframeRef.value?.contentWindow) return
   iframeRef.value.contentWindow.postMessage(
     {
       type: 'LOAD_HOME',
       homeId,
-      baseUrl: window.location.origin + window.location.pathname.replace(/\/[^/]*$/, ''),
+      // Needed so Unity fetches /data/* from the addon root even under ingress.
+      baseUrl: getUnityDataBaseUrl(),
     },
     '*',
   )
