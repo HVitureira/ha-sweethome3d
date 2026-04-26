@@ -8,18 +8,12 @@
           <div>🏠 HA Entity ID:</div>
         </div>
         <div class="ha-only">
-          <input
-            size="50"
-            type="text"
+          <EntitySelector
+            :model-value="store.haEntityId"
             placeholder="sensor.living_room_temperature"
-            pattern="[a-z_]+\.[a-z0-9_]+"
-            title="Format: domain.entity_name (e.g., sensor.living_room_temperature)"
-            :value="store.haEntityId"
-            @change="onEntityIdChange"
+            hint="Enter the Home Assistant entity_id for this smart device"
+            @update:model-value="onEntityIdChange"
           />
-          <div class="ha-hint">
-            Enter the Home Assistant entity_id for this smart device
-          </div>
         </div>
 
         <!-- Effect Radius -->
@@ -50,18 +44,12 @@
           <div>🔗 Controls Entity ID:</div>
         </div>
         <div class="ha-switch-only">
-          <input
-            size="50"
-            type="text"
+          <EntitySelector
+            :model-value="store.controlsEntityId"
             placeholder="light.bedroom_ceiling"
-            pattern="[a-z_]+\.[a-z0-9_]+"
-            title="Format: domain.entity_name (e.g., light.bedroom_ceiling)"
-            :value="store.controlsEntityId"
-            @change="onControlsEntityChange"
+            hint="The light entity this switch controls (e.g., light.bedroom_ceiling)"
+            @update:model-value="onControlsEntityChange"
           />
-          <div class="ha-hint">
-            The light entity this switch controls (e.g., light.bedroom_ceiling)
-          </div>
         </div>
 
         <div class="label-cell ha-switch-only">
@@ -89,12 +77,12 @@
 <script setup lang="ts">
 import { useFurnitureDialog } from '@/composables/useFurnitureDialog'
 import { useFurnitureStore } from '@/stores/furnitureStore'
+import EntitySelector from '@/components/common/EntitySelector.vue'
 
 const store = useFurnitureStore()
 const { dialogOpen, teleportTarget } = useFurnitureDialog()
 
-function onEntityIdChange(e: Event): void {
-  const value = (e.target as HTMLInputElement).value
+function onEntityIdChange(value: string): void {
   store.haEntityId = value
   store.commitProperty('haEntityId', value)
 }
@@ -105,8 +93,7 @@ function onRadiusInput(e: Event): void {
   store.commitProperty('effectRadius', String(value))
 }
 
-function onControlsEntityChange(e: Event): void {
-  const value = (e.target as HTMLInputElement).value
+function onControlsEntityChange(value: string): void {
   store.controlsEntityId = value
   store.commitProperty('controlsEntityId', value)
 }
