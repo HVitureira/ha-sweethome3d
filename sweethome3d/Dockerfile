@@ -48,10 +48,8 @@ RUN chmod a+x /etc/cont-init.d/* && \
     chmod a+x /etc/services.d/*/run && \
     chmod a+x /etc/services.d/*/finish && \
     chmod +x /start.sh && \
-    mkdir -p /var/www/html/data && \
     chown -R nginx:nginx /var/www/html && \
     chmod 755 /var/www/html && \
-    chmod 777 /var/www/html/data && \
     # Ensure run directory exists and has correct permissions
     mkdir -p /var/run && \
     chown nginx:nginx /var/run
