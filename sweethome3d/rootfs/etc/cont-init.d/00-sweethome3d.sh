@@ -30,11 +30,12 @@ if bashio::config.has_value 'php_post_max_size'; then
     sed -i "s/php_admin_value\[post_max_size\] = .*/php_admin_value[post_max_size] = ${PHP_POST_MAX_SIZE}/" /etc/php82/php-fpm.conf
 fi
 
-# Ensure data directory exists with correct permissions
-mkdir -p /var/www/html/data
+# Ensure persistent home storage exists with correct permissions
 chown -R nginx:nginx /var/www/html
 chmod 755 /var/www/html
-chmod 777 /var/www/html/data
+mkdir -p /data/homes
+chown nginx:nginx /data/homes
+chmod 755 /data/homes
 
 # Create log directories
 mkdir -p /var/log/nginx

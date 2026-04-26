@@ -20,7 +20,7 @@
    */
    
   // Saves the posted data in the file name in "path" parameter
-  $dataDir = "data";
+  $dataDir = is_dir('/data/homes') ? '/data/homes' : 'data';
   mkdir($dataDir);
   $dataFile = $dataDir."/".$_GET['path']; 
 

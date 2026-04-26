@@ -20,7 +20,7 @@
    */
    
   // Deletes the home matching the parameter "home" and its sidecar files
-  $dataDir = "data";
+  $dataDir = is_dir('/data/homes') ? '/data/homes' : 'data';
   $homeId = $_GET['home'];
 
   $homeFile = $dataDir."/".$homeId.".sh3x";

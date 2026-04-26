@@ -11,7 +11,7 @@
 
   header('Content-Type: application/json');
 
-  $dataDir = "data";
+  $dataDir = is_dir('/data/homes') ? '/data/homes' : 'data';
   $homes = [];
 
   if (is_dir($dataDir)) {

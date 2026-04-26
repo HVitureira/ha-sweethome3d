@@ -20,7 +20,7 @@
    */
    
   // Reads data from the file name in "path" parameter
-  $dataDir = "data";
+  $dataDir = is_dir('/data/homes') ? '/data/homes' : 'data';
   $path = $_GET['path'] ?? '';
   
   if (empty($path)) {

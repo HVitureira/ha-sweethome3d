@@ -20,7 +20,7 @@
    */
    
   // Returns a JSON array containing available homes without their extension
-  $dataDir = "data";
+  $dataDir = is_dir('/data/homes') ? '/data/homes' : 'data';
   
   echo "[";
   
