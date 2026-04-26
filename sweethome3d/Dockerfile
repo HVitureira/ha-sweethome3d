@@ -19,6 +19,7 @@ RUN apk add --no-cache \
     php82-mbstring \
     php82-fileinfo \
     php82-openssl \
+    php82-curl \
     curl \
     bash && \
     # Optimize for ARM architectures

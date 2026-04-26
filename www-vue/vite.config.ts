@@ -2,6 +2,8 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 import * as fs from 'node:fs'
+import * as http from 'node:http'
+import * as https from 'node:https'
 import * as path from 'node:path'
 
 export default defineConfig({
@@ -59,6 +61,52 @@ export default defineConfig({
             }
             res.statusCode = 200
             res.end()
+            return
+          }
+
+          // --- haApiProxy.php: proxy to real HA instance for dev ---
+          // Frontend sends HA credentials via headers (from settingsStore/localStorage).
+          // Falls back to test-data/ha-config.json if headers are missing.
+          if (urlPath === '/haApiProxy.php') {
+            let addr = req.headers['x-ha-address'] as string | undefined
+            let token = req.headers['x-ha-token'] as string | undefined
+            let useSSL = req.headers['x-ha-ssl'] !== 'false'
+
+            // Fallback: read from test-data/ha-config.json
+            if (!addr || !token) {
+              const configPath = path.resolve(__dirname, '../test-data/ha-config.json')
+              try {
+                const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+                addr = addr || cfg.homeAssistantAddress
+                token = token || cfg.homeAssistantAccessToken
+                if (cfg.useSSL !== undefined) useSSL = cfg.useSSL
+              } catch { /* no config file */ }
+            }
+
+            if (!addr || !token) {
+              res.statusCode = 503
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify({ error: 'No HA credentials. Configure in Settings tab.' }))
+              return
+            }
+
+            const mod = useSSL ? https : http
+            const url = `${useSSL ? 'https' : 'http'}://${addr}/api/states`
+
+            const proxyReq = mod.get(url, {
+              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+              rejectUnauthorized: false,
+            }, (proxyRes) => {
+              res.statusCode = proxyRes.statusCode ?? 502
+              res.setHeader('Content-Type', 'application/json')
+              proxyRes.pipe(res)
+            })
+            proxyReq.on('error', (err) => {
+              res.statusCode = 502
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify({ error: `Cannot reach HA at ${addr}: ${err.message}` }))
+            })
+            proxyReq.setTimeout(10000, () => { proxyReq.destroy() })
             return
           }
 
