@@ -47,7 +47,6 @@ HA_CONFIG_FILE="/var/www/html/ha-config.json"
 HA_ADDRESS=""
 HA_TOKEN=""
 HA_USE_SSL="true"
-HA_ENTITIES="[]"
 
 if bashio::config.has_value 'homeassistant_address'; then
     HA_ADDRESS=$(bashio::config 'homeassistant_address')
@@ -59,11 +58,6 @@ fi
 
 if bashio::config.has_value 'use_ssl'; then
     HA_USE_SSL=$(bashio::config 'use_ssl')
-fi
-
-if bashio::config.has_value 'tracked_entities'; then
-    # bashio::config returns JSON array for list types
-    HA_ENTITIES=$(bashio::config 'tracked_entities')
 fi
 
 # Auto-detect HA address via Supervisor API if not configured
@@ -105,7 +99,7 @@ cat > "${HA_CONFIG_FILE}" <<EOJSON
   "homeAssistantAddress": "${HA_ADDRESS}",
   "homeAssistantAccessToken": "${HA_TOKEN_ESCAPED}",
   "useSSL": ${HA_USE_SSL},
-  "trackedEntities": ${HA_ENTITIES},
+    "trackedEntities": [],
   "source": "addon-options"
 }
 EOJSON

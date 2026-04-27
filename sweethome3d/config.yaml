@@ -20,7 +20,6 @@ options:
   homeassistant_address: ""
   homeassistant_token: ""
   use_ssl: true
-  tracked_entities: []
 schema:
   php_max_execution_time: int(30,3600)?
   php_memory_limit: str?
@@ -29,8 +28,6 @@ schema:
   homeassistant_address: str?
   homeassistant_token: password?
   use_ssl: bool?
-  tracked_entities:
-    - str
 ports:
   8099/tcp: 8099
 ports_description:

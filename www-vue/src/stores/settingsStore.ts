@@ -66,7 +66,6 @@ interface AddonConfig {
   homeAssistantAddress?: string
   homeAssistantAccessToken?: string
   useSSL?: boolean
-  trackedEntities?: string[]
   source?: string
 }
 
@@ -118,9 +117,6 @@ export const useSettingsStore = defineStore('settings', () => {
       }
       if (addon.useSSL !== undefined) {
         s.useSSL = addon.useSSL
-      }
-      if (addon.trackedEntities && addon.trackedEntities.length > 0) {
-        s.trackedEntities = addon.trackedEntities
       }
 
       // Auto-detect HA address when running in ingress and not configured

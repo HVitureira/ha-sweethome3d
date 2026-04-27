@@ -35,7 +35,7 @@ if [ -f "$OPTIONS_FILE" ]; then
             "homeAssistantAddress" => $opts["homeassistant_address"] ?? "",
             "homeAssistantAccessToken" => $opts["homeassistant_token"] ?? "",
             "useSSL" => $opts["use_ssl"] ?? true,
-            "trackedEntities" => $opts["tracked_entities"] ?? [],
+            "trackedEntities" => [],
             "source" => "addon-options"
         ];
         file_put_contents($argv[2], json_encode($cfg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));

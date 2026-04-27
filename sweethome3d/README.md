@@ -46,13 +46,38 @@ Sets the memory limit for PHP scripts.
 
 Sets the maximum allowed size for uploaded files.
 
-**Default:** `50M`
+**Default:** `200M`
 
 ### Option: `php_post_max_size`
 
 Sets the maximum size of POST data that PHP will accept.
 
-**Default:** `50M`
+**Default:** `200M`
+
+### Option: `homeassistant_address`
+
+Home Assistant host or `host:port` used for API/WebSocket connections.
+Leave empty to allow automatic address detection.
+
+**Default:** `""` (auto-detect)
+
+### Option: `homeassistant_token`
+
+Home Assistant long-lived access token used for API and WebSocket authentication.
+
+**Default:** `""`
+
+### Option: `use_ssl`
+
+Use SSL connection for Home Assistant communication.
+
+Enable this when your Home Assistant instance is configured with HTTPS and valid SSL certificates.
+This controls WebSocket protocol selection:
+
+- Enabled: `wss://`
+- Disabled: `ws://`
+
+**Default:** `true`
 
 ## Usage
 
