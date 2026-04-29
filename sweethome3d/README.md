@@ -26,7 +26,9 @@ SweetHome3D is a free interior design application that helps you place your furn
 1. Add this repository to your Home Assistant add-on store
 2. Install the SweetHome3D add-on
 3. Start the add-on
-4. Access SweetHome3D from the Home Assistant sidebar
+4. A **SweetHome3D** entry appears in the Home Assistant sidebar — click it to open the editor inline inside Home Assistant (via Ingress). No host port or external URL is exposed.
+
+> If the sidebar entry doesn't appear after starting, open the addon page and make sure the **Show in sidebar** toggle is on.
 
 ## Configuration
 
@@ -81,10 +83,9 @@ This controls WebSocket protocol selection:
 
 ## Usage
 
-1. Once the add-on is running, click on "SweetHome3D" in the Home Assistant sidebar
-2. The SweetHome3D interface will open in your browser
-3. You can create new home designs or load existing ones
-4. Your designs are automatically saved to the add-on's data directory
+1. Once the add-on is running, click **SweetHome3D** in the Home Assistant sidebar — the editor loads inline inside Home Assistant
+2. Create new home designs or load existing ones from the editor
+3. Your designs are automatically saved to the add-on's data directory
 
 ## Support
 
