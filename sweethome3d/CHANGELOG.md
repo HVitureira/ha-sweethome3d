@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - 2026-04-29
+
+### Changed
+- Addon is now ingress-only and embeds in the Home Assistant sidebar.
+  Removed the public `8099/tcp` port mapping and the external `webui`
+  URL — SweetHome3D is reached exclusively through the HA sidebar entry
+  via Home Assistant Ingress.
+
 ## [1.0.0] - 2025-10-15
 
 ### Added

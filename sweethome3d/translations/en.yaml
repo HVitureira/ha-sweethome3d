@@ -1,0 +1,22 @@
+configuration:
+  php_max_execution_time:
+    name: "PHP max execution time (seconds)"
+    description: "Maximum time a PHP request may run before timing out."
+  php_memory_limit:
+    name: "PHP memory limit"
+    description: "Maximum memory available to each PHP request (for example: 256M)."
+  php_upload_max_filesize:
+    name: "PHP upload max file size"
+    description: "Maximum allowed size for a single uploaded file (for example: 200M)."
+  php_post_max_size:
+    name: "PHP POST max size"
+    description: "Maximum size of total POST body data accepted by PHP (for example: 200M)."
+  homeassistant_address:
+    name: "Home Assistant address"
+    description: "Home Assistant host or host:port without protocol. Leave empty for auto-detection."
+  homeassistant_token:
+    name: "Home Assistant long-lived access token"
+    description: "Token used to authenticate with Home Assistant APIs and WebSocket connections."
+  use_ssl:
+    name: "Use SSL connection"
+    description: "Enable this when Home Assistant is served via HTTPS with valid SSL certificates. Uses wss:// for WebSockets when enabled and ws:// when disabled."

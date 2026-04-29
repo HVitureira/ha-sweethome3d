@@ -1,5 +1,5 @@
 name: SweetHome3D
-version: "1.0.0"
+version: "1.1.0"
 slug: sweethome3d
 description: SweetHome3D JS - Interior design application for Home Assistant
 url: https://github.com/HVitureira/ha-sweethome3d
@@ -20,7 +20,6 @@ options:
   homeassistant_address: ""
   homeassistant_token: ""
   use_ssl: true
-  tracked_entities: []
 schema:
   php_max_execution_time: int(30,3600)?
   php_memory_limit: str?
@@ -29,16 +28,9 @@ schema:
   homeassistant_address: str?
   homeassistant_token: password?
   use_ssl: bool?
-  tracked_entities:
-    - str
-ports:
-  8099/tcp: 8099
-ports_description:
-  8099/tcp: SweetHome3D Web Interface
 panel_icon: mdi:home-floor-3
 panel_title: SweetHome3D
 panel_admin: false
-webui: http://[HOST]:[PORT:8099]
 ingress: true
 ingress_port: 8099
 ingress_stream: false
