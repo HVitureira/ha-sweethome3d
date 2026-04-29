@@ -1,6 +1,6 @@
-name: SweetHome3D
-version: "1.1.0"
-slug: sweethome3d
+name: HASweetHome3D
+version: "1.1.1"
+slug: hasweethome3d
 description: SweetHome3D JS - Interior design application for Home Assistant
 url: https://github.com/HVitureira/ha-sweethome3d
 arch:
@@ -29,7 +29,7 @@ schema:
   homeassistant_token: password?
   use_ssl: bool?
 panel_icon: mdi:home-floor-3
-panel_title: SweetHome3D
+panel_title: HASweetHome3D
 panel_admin: false
 ingress: true
 ingress_port: 8099

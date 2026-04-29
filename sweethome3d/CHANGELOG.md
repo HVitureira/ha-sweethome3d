@@ -2,12 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.1] - 2026-04-30
+
+### Changed
+- Renamed addon from `SweetHome3D` to `HASweetHome3D`. Updated the
+  display name, sidebar panel title, and internal slug (`sweethome3d`
+  → `hasweethome3d`).
+
+### Added
+- Addon `logo.png` and `icon.png` for the Home Assistant addon store
+  page and sidebar/store thumbnail.
+
 ## [1.1.0] - 2026-04-29
 
 ### Changed
 - Addon is now ingress-only and embeds in the Home Assistant sidebar.
   Removed the public `8099/tcp` port mapping and the external `webui`
-  URL — SweetHome3D is reached exclusively through the HA sidebar entry
+  URL — the addon is reached exclusively through the HA sidebar entry
   via Home Assistant Ingress.
 
 ## [1.0.0] - 2025-10-15
