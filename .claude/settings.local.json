@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rtk git:*)",
+      "Bash(python -c \":*)",
+      "Bash(grep -r DefaultFurnitureCatalog /c/Users/Henoch/Desktop/faculdade/tese/tese-app/SweetHome3DJS-7.5.2/ha-sweethome3d --include=*.js)",
+      "Bash(find /c/Users/Henoch/Desktop/faculdade/tese/tese-app/SweetHome3DJS-7.5.2/ha-sweethome3d/www-vue/src -type f -name *.js -o -name *.ts -o -name *.vue)",
+      "Bash(grep -r \"for.*in\\\\|Object.keys\" /c/Users/Henoch/Desktop/faculdade/tese/tese-app/SweetHome3DJS-7.5.2/ha-sweethome3d/sweethome3d/www/lib --include=*.js --exclude=*.min.js)",
+      "Bash(grep -r \"name#\\\\|model#\" /c/Users/Henoch/Desktop/faculdade/tese/tese-app/SweetHome3DJS-7.5.2/ha-sweethome3d --include=*.js --include=*.ts --exclude-dir=node_modules)",
+      "Bash(grep -r catalog /c/Users/Henoch/Desktop/faculdade/tese/tese-app/SweetHome3DJS-7.5.2/ha-sweethome3d --include=*.ts --include=*.js --exclude-dir=node_modules --exclude=*.min.js)",
+      "Bash(sort -t'#' -k2 -n)",
+      "Bash(git log:*)",
+      "Bash(find /c/Users/Henoch/Desktop/faculdade/tese/tese-app/SweetHome3DJS-7.5.2 -name *.ts ! -path */node_modules/* ! -path */.git/*)",
+      "Bash(xargs grep:*)",
+      "Bash(ls -la /c/Users/Henoch/Desktop/faculdade/tese/tese-app/SweetHome3DJS-7.5.2/ha-sweethome3d/sweethome3d/www/lib/*.map)",
+      "WebFetch(domain:github.com)",
+      "WebSearch",
+      "Bash(python:*)",
+      "Bash(grep -l \"model\\\\|load\\\\|cache\\\\|IndexedDB\" /c/Users/Henoch/Desktop/faculdade/tese/tese-app/SweetHome3DJS-7.5.2/ha-sweethome3d/sweethome3d/www/lib/*.js)",
+      "Bash(grep -rn \"cache\\\\|Cache\\\\|storage\\\\|Storage\\\\|IndexedDB\" /c/Users/Henoch/Desktop/faculdade/tese/tese-app/SweetHome3DJS-7.5.2/ha-sweethome3d/sweethome3d/www/lib/*.js)",
+      "Bash(ls -lh /c/Users/Henoch/Desktop/faculdade/tese/tese-app/SweetHome3DJS-7.5.2/ha-sweethome3d/sweethome3d/www/lib/resources/models/*.zip)",
+      "Bash(rtk grep:*)",
+      "Bash(rtk ls:*)"
+    ]
+  }
+}
