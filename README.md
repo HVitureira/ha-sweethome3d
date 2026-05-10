@@ -44,10 +44,12 @@ ha-sweethome3d/
 │   │   ├── assets/           # ← Vue build output goes here
 │   │   ├── index.html        # Main HTML (references Vue bundle)
 │   │   ├── haApiProxy.php    # HA API proxy for entity selector
+│   │   ├── unity-visualizer/ # ← Unity WebGL files baked into Docker image (see below)
 │   │   └── lib/              # SweetHome3D JS libraries
-│   ├── Dockerfile
+│   ├── Dockerfile            # Build context is ./sweethome3d — cannot reach unity-build/
 │   ├── config.yaml           # HA addon manifest
 │   └── rootfs/               # Container filesystem (nginx, PHP, init scripts)
+├── unity-build/              # Unity WebGL output target (dev server reads from here)
 ├── test-data/                # Local test files (.sh3x homes, device JSONs)
 ├── test-config.example       # Example addon options
 └── docker-compose.yml        # Local Docker testing
@@ -98,6 +100,40 @@ emulated by Vite middleware using `test-data/`.
 To enable the HA entity selector in dev mode, configure your HA address and
 long-lived access token in the Settings tab of the app.
 
+### Unity WebGL Build — Two Folders Explained
+
+There are **two separate Unity-related folders** with different purposes:
+
+| Folder | Used by | Role |
+|--------|---------|------|
+| `unity-build/` | Vite dev server (`npm run dev`) | **Unity output target.** Set this as your Unity WebGL build path. The Vite dev server reads directly from here and serves it at `/unity-visualizer/`. |
+| `sweethome3d/www/unity-visualizer/` | Docker / production | **What gets baked into the Docker image.** The Dockerfile uses `COPY www/ /var/www/html/` — its build context is `./sweethome3d`, so it cannot reach `unity-build/` at the repo root. |
+
+**Why the split?** The Dockerfile's build context is `./sweethome3d` for security/portability reasons. `unity-build/` lives at the repo root and is outside that context, so it can never be directly copied by Docker.
+
+**Workflow after every Unity build:**
+
+```bash
+# From ha-sweethome3d/ root — sync unity-build/ → sweethome3d/www/unity-visualizer/
+# (PowerShell)
+Copy-Item -Path "unity-build\Build\*"          -Destination "sweethome3d\www\unity-visualizer\Build\"          -Recurse -Force
+Copy-Item -Path "unity-build\StreamingAssets\*" -Destination "sweethome3d\www\unity-visualizer\StreamingAssets\" -Recurse -Force
+Copy-Item -Path "unity-build\index.html"        -Destination "sweethome3d\www\unity-visualizer\index.html"      -Force
+
+# (bash/macOS/Linux)
+cp -r unity-build/Build/*          sweethome3d/www/unity-visualizer/Build/
+cp -r unity-build/StreamingAssets/* sweethome3d/www/unity-visualizer/StreamingAssets/
+cp    unity-build/index.html        sweethome3d/www/unity-visualizer/index.html
+```
+
+Then rebuild Docker so it picks up the new files:
+
+```bash
+docker-compose up --build
+```
+
+> **Dev server does not need this step** — `npm run dev` reads from `unity-build/` directly via the `unity-visualizer-static` Vite plugin.
+
 ### Local Docker Testing
 
 ```bash
@@ -108,10 +144,12 @@ cp test-config.example test-config.local
 #    "homeassistant_address": "192.168.1.100:8123"
 #    "homeassistant_token": "YOUR_LONG_LIVED_TOKEN"
 
-# 3. Build and run
+# 3. Sync Unity build to Docker folder (see above)
+
+# 4. Build and run
 docker-compose up --build
 
-# 4. Open http://localhost:8099
+# 5. Open http://localhost:8099
 ```
 
 ### Preparing a Merge to Master

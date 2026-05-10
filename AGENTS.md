@@ -1,4 +1,4 @@
-﻿# SweetHome3D HA Add-on - LLM Agent Context Guide
+# SweetHome3D HA Add-on - LLM Agent Context Guide
 
 This document provides comprehensive context for LLM agents working on this modified SweetHome3D JS web application, which runs as a Home Assistant add-on and exports 3D geometry + IoT device data for Unity.
 
@@ -754,6 +754,57 @@ The original HA fields were added directly in `sweethome3d/www/index.html` using
 
 Do **not** add new fields to `index.html`. The Vue overlay (`www-vue/`) handles all HA UI.
 
+### Unity WebGL build location — Two Folders Explained
+
+There are **two separate Unity-related folders** with distinct roles:
+
+| Folder | Used by | Role |
+|--------|---------|------|
+| `unity-build/` | Vite dev server (`npm run dev`) | **Unity output target.** Set this as your Unity WebGL output path in the Unity Build Settings. The Vite `unity-visualizer-static` plugin reads directly from here and serves it at `/unity-visualizer/`. |
+| `sweethome3d/www/unity-visualizer/` | Docker / production | **What gets baked into the Docker image.** The Dockerfile uses `COPY www/ /var/www/html/` with build context `./sweethome3d`. `unity-build/` is at the repo root — **outside** this context — and can never be directly copied by Docker. |
+
+**The Dockerfile does NOT have a `COPY unity-build/` line and cannot have one** — Docker build contexts cannot reference parent directories. The only path into the image is through `sweethome3d/www/unity-visualizer/`.
+
+**Required sync step after every Unity build** (before `docker-compose up --build`):
+
+```powershell
+# PowerShell (Windows)
+Copy-Item -Path "unity-build\Build\*"           -Destination "sweethome3d\www\unity-visualizer\Build\"           -Recurse -Force
+Copy-Item -Path "unity-build\StreamingAssets\*"  -Destination "sweethome3d\www\unity-visualizer\StreamingAssets\"  -Recurse -Force
+Copy-Item -Path "unity-build\index.html"         -Destination "sweethome3d\www\unity-visualizer\index.html"       -Force
+```
+
+```bash
+# bash / macOS / Linux
+cp -r unity-build/Build/*           sweethome3d/www/unity-visualizer/Build/
+cp -r unity-build/StreamingAssets/*  sweethome3d/www/unity-visualizer/StreamingAssets/
+cp    unity-build/index.html         sweethome3d/www/unity-visualizer/index.html
+```
+
+After syncing, run `docker-compose up --build`. The `COPY www/` step will no longer be cached (Docker detects changed files) and the new Unity build will be included.
+
+> **Dev server does not need the sync step.** `npm run dev` reads `unity-build/` directly.
+
+Expected structure (both folders are identical in content):
+
+```
+ha-sweethome3d/unity-build/               ← Unity output target (dev server)
+ha-sweethome3d/sweethome3d/www/unity-visualizer/   ← Docker bake target (production)
+├── index.html                  ← Unity entry point (localStorage reader)
+├── Build/
+│   ├── unity-build.loader.js
+│   ├── unity-build.wasm.br     ← WebAssembly (Brotli compressed)
+│   ├── unity-build.framework.js.br
+│   └── unity-build.data.br
+├── TemplateData/
+└── StreamingAssets/
+    └── smart-viz-files/
+        ├── home-{id}_devices.json    ← overwritten by exportForUnity.php at runtime
+        └── home-{id}_geometry.zip   ← overwritten by exportForUnity.php at runtime
+```
+
+The `StreamingAssets/smart-viz-files/` data bundled in the Unity build is only a default/demo dataset — the live export from the SweetHome3D editor always overwrites it.
+
 ---
 
 ### Modifying Export Format
@@ -765,7 +816,7 @@ Do **not** add new fields to `index.html`. The Vue overlay (`www-vue/`) handles 
 ### Debugging Export Issues
 1. Open browser DevTools console
 2. Run `exportForUnity()` manually
-3. Check console for `ðŸ“¤`, `âœ…`, `âŒ` prefixed logs
+3. Check console for `📬`, `✅`, `❌` prefixed logs
 4. For OBJ issues: `window.OBJExporter` is globally available
 5. For device detection: `window.isSmartDeviceFurniture(piece)`
 
@@ -819,7 +870,7 @@ docker-compose up --build
 | `urlBase` and Vue Router hash mode | `www-vue/index.html` must calculate `urlBase` from `origin + pathname`, NOT `href`. Vue Router uses hash mode (`/#/visualizer`), and `href` includes the `#` fragment â€” SH3D would request `http://host/#/listHomes.php` which resolves to `/` and returns `index.html` HTML instead of JSON. Symptom: `Unexpected token '<'` on page reload when on any tab other than Floor Plan |
 | Vite dev backend (`sh3d-dev-backend`) | `vite.config.ts` has a middleware that handles `listHomes.php`, `writeData.php`, `deleteHome.php`, and `/data/*` by reading/writing directly to `../test-data/`. This means **Docker is not required for dev** â€” only for production builds. The middleware scans `test-data/` for `.sh3x` files and serves them at `/data/`. Missing `.json` files return `{}` (SH3D expects valid JSON for preferences) |
 | Stale IndexedDB recovery data | SH3D auto-recovery stores home state in IndexedDB (`SweetHome3DJS/Recovery/`). After rebuilding Docker or switching between ports (5173 vs 8099), orphaned records may cause `Can't open home ... Error: 0`. Fix: DevTools â†’ Application â†’ IndexedDB â†’ delete `SweetHome3DJS` database |
-| Unity build must exist for Docker | The `Dockerfile` has `COPY unity-build/ /var/www/html/unity-visualizer/`. If `unity-build/` is empty (only `.gitkeep`), the Unity tab will show a blank iframe. Place a real build before `docker build` |
+| Unity build must exist for Docker | **Two folders are involved** (see "Unity WebGL build location" below). `unity-build/` is used by the Vite dev server directly. For Docker, the files must be manually synced to `sweethome3d/www/unity-visualizer/` before running `docker-compose up --build`, because the Dockerfile build context (`./sweethome3d`) cannot reach the repo-root `unity-build/` folder. If `sweethome3d/www/unity-visualizer/Build/` is missing, the Unity tab will show a blank iframe. |
 | `X-Frame-Options: SAMEORIGIN` | Already set in nginx.conf. This allows the Unity iframe because both the parent Vue app and the iframe origin are on the same host/port. No change needed |
 
 ---
