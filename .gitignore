@@ -62,3 +62,13 @@ tts/
 test-config
 test-config.local
 test-data/
+
+# Environment variables
+.env
+
+# Unity WebGL build artifacts
+unity-build/Build/
+unity-build/TemplateData/
+unity-build/StreamingAssets/
+unity-build/index.html
+!unity-build/.gitkeep
