@@ -28,7 +28,7 @@ schema:
   homeassistant_address: str?
   homeassistant_token: password?
   use_ssl: bool?
-panel_icon: mdi:home-floor-3
+panel_icon: custom:ha-sweethome3d:logo
 panel_title: HASweetHome3D
 panel_admin: false
 ingress: true

@@ -20,7 +20,9 @@
       "Bash(grep -rn \"cache\\\\|Cache\\\\|storage\\\\|Storage\\\\|IndexedDB\" /c/Users/Henoch/Desktop/faculdade/tese/tese-app/SweetHome3DJS-7.5.2/ha-sweethome3d/sweethome3d/www/lib/*.js)",
       "Bash(ls -lh /c/Users/Henoch/Desktop/faculdade/tese/tese-app/SweetHome3DJS-7.5.2/ha-sweethome3d/sweethome3d/www/lib/resources/models/*.zip)",
       "Bash(rtk grep:*)",
-      "Bash(rtk ls:*)"
+      "Bash(rtk ls:*)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Henoch\\\\Desktop\\\\faculdade\\\\tese\\\\tese-app\\\\SweetHome3DJS-7.5.2\\\\ha-sweethome3d\" -Recurse -Include \"*.html\", \"*.js\", \"*.yaml\", \"*.yml\")",
+      "Bash(Select-Object -ExpandProperty FullName)"
     ]
   }
 }

@@ -79,6 +79,7 @@ if (Test-Path $UnityBuild) {
 Write-Host "4. Normalizing script line endings..." -ForegroundColor Green
 $ScriptsToFix = @(
     "start.sh",
+    "rootfs\etc\cont-init.d\00-sweethome3d.sh",
     "rootfs\etc\cont-init.d\00-banner.sh",
     "rootfs\etc\cont-init.d\10-config.sh",
     "rootfs\etc\cont-init.d\20-permissions.sh",

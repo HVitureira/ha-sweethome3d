@@ -113,4 +113,66 @@ else
     bashio::log.warning "HA address not configured — set in Add-on Configuration or it will be auto-detected from the browser"
 fi
 
+# ── Deploy custom icon assets → HA /local/ path ───────────────────────────
+# config:rw maps /homeassistant/ to HA's config dir.
+# Files placed in /homeassistant/www/ are served by HA at /local/ without auth.
+HA_WWW_DIR="/homeassistant/www"
+ICON_JS_SRC="/var/www/html/ha-sweethome3d-icons.js"
+
+if [ -d "/homeassistant" ]; then
+    mkdir -p "${HA_WWW_DIR}"
+
+    if [ -f "${ICON_JS_SRC}" ]; then
+        cp "${ICON_JS_SRC}" "${HA_WWW_DIR}/ha-sweethome3d-icons.js"
+        chmod 644 "${HA_WWW_DIR}/ha-sweethome3d-icons.js"
+        bashio::log.info "Custom icon module deployed to ${HA_WWW_DIR}"
+    else
+        bashio::log.warning "Icon JS not found at ${ICON_JS_SRC}"
+    fi
+else
+    bashio::log.warning "/homeassistant not mounted — custom sidebar icon will not load (config:rw missing?)"
+fi
+
+# ── Register icon module as Lovelace resource (storage mode only) ──────────
+# Only runs when the Supervisor token is available (i.e. inside a real HA addon environment).
+if [ -n "${SUPERVISOR_TOKEN:-}" ] && [ -d "/homeassistant" ]; then
+    HA_API="http://supervisor/core/api"
+    ADDON_VER=$(bashio::addon.version 2>/dev/null || echo "dev")
+    RES_URL="/local/ha-sweethome3d-icons.js?v=${ADDON_VER}"
+
+    EXISTING=$(curl -sSf \
+        -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+        "${HA_API}/lovelace/resources" 2>/dev/null || echo "[]")
+
+    # Remove stale entries from previous addon versions
+    echo "${EXISTING}" | python3 -c "
+import sys, json
+try:
+    for r in json.load(sys.stdin):
+        if 'ha-sweethome3d-icons' in r.get('url','') and r.get('id'):
+            print(r['id'])
+except:
+    pass
+" 2>/dev/null | while read -r OLD_ID; do
+        curl -sSf -X DELETE \
+            -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+            "${HA_API}/lovelace/resources/${OLD_ID}" >/dev/null 2>&1 || true
+        bashio::log.info "Removed stale Lovelace resource id=${OLD_ID}"
+    done
+
+    # Register the current version
+    REG=$(curl -sSf -X POST \
+        -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "{\"res_type\":\"module\",\"url\":\"${RES_URL}\"}" \
+        "${HA_API}/lovelace/resources" 2>/dev/null || echo "{}")
+
+    if echo "${REG}" | python3 -c "import sys,json; exit(0 if json.load(sys.stdin).get('id') else 1)" 2>/dev/null; then
+        bashio::log.info "Lovelace resource registered: ${RES_URL}"
+    else
+        bashio::log.warning "Could not auto-register Lovelace resource (YAML-mode Lovelace?)"
+        bashio::log.warning "Add manually: url=${RES_URL} type=module"
+    fi
+fi
+
 bashio::log.info "SweetHome3D addon initialization complete"

@@ -1,5 +1,8 @@
 <template>
   <nav class="tab-bar">
+    <div class="tab-logo">
+      <img src="/ha-sweethome3d-logo.svg" alt="HASweetHome3D" class="logo-img" />
+    </div>
     <RouterLink to="/"           class="tab-item">Floor Plan</RouterLink>
     <RouterLink to="/visualizer" class="tab-item">3D Visualizer</RouterLink>
     <RouterLink to="/settings"   class="tab-item">&#9881; Settings</RouterLink>
@@ -11,6 +14,20 @@
 </script>
 
 <style scoped>
+.tab-logo {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-right: 1px solid #3a3a5c;
+  flex-shrink: 0;
+}
+
+.logo-img {
+  height: 24px;
+  width: auto;
+  display: block;
+}
+
 .tab-bar {
   position: fixed;
   top: 0;
