@@ -20,6 +20,7 @@ This document provides comprehensive context for LLM agents working on this modi
 - **Tabbed UI**: Floor Plan tab (SweetHome3D editor), 3D Visualizer tab (Unity WebGL iframe), Settings tab (HA credentials + viz params)
 - **Settings panel**: HA server address, long-lived access token, tracked entities, visualization parameters â€” all persisted in `localStorage`
 - **Unity visualizer**: Embedded as iframe at `/unity-visualizer/`; receives config from `localStorage` on load and via `postMessage` on settings changes
+- **Add to Dashboard**: button in the Visualizer tab writes a `type: iframe` card (pointing at the selected home's live Unity scene) directly into a chosen Home Assistant Lovelace dashboard/view, via the Core WebSocket API — see [HA Dashboard Integration (Lovelace)](#ha-dashboard-integration-lovelace)
 - Runs as Docker container (nginx + PHP-FPM, port 8099)
 - Integrates with Home Assistant as an Ingress add-on
 
@@ -168,6 +169,10 @@ ha-sweethome3d/
 | `www/lib/unity-export-utils.js` | 971 | Complete Unity export: device JSON + rooms + walls + C# script |
 | `www/lib/obj-exporter-integration.js` | 253 | Adds export button + keyboard shortcut to SweetHome3D UI |
 | `www/lib/objDefaults.js` | 903 | 100+ default MTL material definitions (ambient, diffuse, specular) |
+| `www/lib/LovelaceWs.php` | ~310 | Native PHP WebSocket client for HA Core API (proxied via Supervisor) — dashboards, cards, sidebar-icon resource registration. No `exec()`/Python — see [HA Dashboard Integration](#ha-dashboard-integration-lovelace) |
+| `www/lib/registerIcon.php` | ~20 | CLI-only entry point (invoked from `00-sweethome3d.sh` at container start) — registers the sidebar logo as a Lovelace resource via `LovelaceWs.php` |
+| `www/listDashboards.php` | ~15 | GET endpoint — lists HA Lovelace dashboards + their views, via `LovelaceWs.php` |
+| `www/addDashboardCard.php` | ~70 | POST endpoint — builds an ingress-aware iframe card and writes it into the chosen dashboard/view, via `LovelaceWs.php` |
 | `.claude/skills/new-ha-device/scripts/create_ha_device.py` | ~550 | Python script to add/replace HA device models (cube or Meshy.ai OBJ) |
 
 ### Core SweetHome3D Files (DO NOT MODIFY)
@@ -554,6 +559,40 @@ A furniture piece is considered a smart device if:
 
 ---
 
+## HA Dashboard Integration (Lovelace)
+
+### Why this exists, and why it's WebSocket, not REST
+
+Lovelace dashboard/card/resource management (`lovelace/config`, `lovelace/config/save`, `lovelace/dashboards/list`, `lovelace/resources*`) has **no REST equivalent** in HA core — it's WebSocket-only, reachable from inside the addon container at `ws://supervisor/core/websocket`, proxied by Supervisor and authenticated with `SUPERVISOR_TOKEN` (an env var Supervisor injects automatically — see Known Gotchas for the `clear_env` trap). There is no REST fallback; calling a REST path like `http://supervisor/core/api/lovelace/resources` returns 404 and fails silently if the response isn't checked carefully — this exact mistake was in `00-sweethome3d.sh` for the sidebar-icon registration until it was fixed.
+
+### `www/lib/LovelaceWs.php`
+
+A minimal, dependency-free RFC6455 client (`stream_socket_client` + manual frame pack/unpack + handshake) — no shell-out, no Python, no external library. Exposes:
+- `lovelace_ws_connect_and_auth()` — opens the socket, performs the WS upgrade, handles the `auth_required → auth → auth_ok` handshake using `SUPERVISOR_TOKEN`.
+- `lovelace_ws_list_dashboards()` — calls `lovelace/dashboards/list` + `lovelace/config` per dashboard → `[{url_path, title, views: [{index, title}]}]`.
+- `lovelace_ws_add_card(array $args)` — fetches a view's `lovelace/config`, appends a card, saves via `lovelace/config/save`. Detects YAML-mode/strategy dashboards and the newer `sections` view layout (no flat `cards` array) and returns `{ok: false, reason: 'unsupported_view_layout', card}` instead of silently writing something that won't render.
+- `lovelace_ws_register_resource(string $url, string $marker)` — lists existing resources via `lovelace/resources`, deletes stale entries matching `$marker` (old addon versions), creates the current one via `lovelace/resources/create`.
+
+> **Verification status**: `lovelace/dashboards/list`, `lovelace/config`, `lovelace/config/save` are confirmed working against a real HA instance (cards are successfully added in production). The `lovelace/resources*` command names are inferred from the same naming convention but have **not** been field-verified yet — check addon logs after the next real deploy.
+
+### Three consumers
+
+1. **`www/listDashboards.php`** — GET endpoint backing the "Add to Dashboard" dialog's dropdowns. Thin wrapper around `lovelace_ws_list_dashboards()`.
+2. **`www/addDashboardCard.php`** — POST `{homeId, urlPath, viewIndex}`. Resolves the addon's ingress-proxied URL via Supervisor `GET /addons/self/info` (`ingress_entry`, same pattern as `haApiProxy.php`), builds `{type: 'iframe', url: '{ingress_entry}/unity-visualizer/index.html?homeId={homeId}', ...}`, and calls `lovelace_ws_add_card()`. On `unsupported_view_layout` or any WS failure, returns the card JSON so the frontend can show a copy-paste fallback instead of failing silently.
+3. **`www/lib/registerIcon.php`** (CLI, not web-facing) — invoked from `00-sweethome3d.sh` cont-init with the sidebar icon module's `/local/...` URL; registers it as a Lovelace resource so `panel_icon: custom:ha-sweethome3d:logo` (in `config.yaml`) actually resolves in the HA frontend instead of falling back to a blank icon.
+
+### Frontend — `UnityView.vue`
+
+"🖥️ Add to Dashboard" button (disabled until the selected home has a full export — `hasGeometry`) opens a dialog: fetch `listDashboards.php` → Dashboard `<select>` → dependent View `<select>` (derived via computed `availableViews`, no extra fetch) → POST `addDashboardCard.php`. `dashboardsLoading`/`addingCard` refs drive loading text + disabled states during both fetches. On `{ok: false, card}`, shows the card JSON in a read-only `<textarea>` with a Copy button instead of a bare error.
+
+### Standalone scene loading (no parent app)
+
+The generated card is a bare `<iframe src=".../unity-visualizer/index.html?homeId=X">` rendered directly by the HA frontend — there is no parent Vue app to `postMessage({type: 'LOAD_HOME', ...})` the way `UnityView.vue`'s own iframe usage works. To handle this, `index.html` also reads `?homeId=` from `location.search` directly: if present, it computes `baseUrl` from its own `window.location` (same strip-`/unity-visualizer`-from-pathname logic as `UnityView.vue`'s `getUnityDataBaseUrl()`) and calls `SendMessage('SceneSetup', 'LoadHomeFromWeb', ...)` itself — reusing the exact same `window.pendingLoadHome` queuing mechanism used for the postMessage path. No Unity-side (C#) changes were needed; `LoadHomeFromWeb` only ever consumes the `{homeId, baseUrl}` payload regardless of how `SendMessage` was triggered.
+
+> ⚠️ **This logic lives in three places that must all be kept in sync** — see the "Unity `index.html` has three copies" row in Known Gotchas below. Patching only the deployed copy or only the build output is not enough.
+
+---
+
 ## Key JavaScript Classes
 
 ### OBJExporter (objExporter.js)
@@ -872,6 +911,9 @@ docker-compose up --build
 | Stale IndexedDB recovery data | SH3D auto-recovery stores home state in IndexedDB (`SweetHome3DJS/Recovery/`). After rebuilding Docker or switching between ports (5173 vs 8099), orphaned records may cause `Can't open home ... Error: 0`. Fix: DevTools â†’ Application â†’ IndexedDB â†’ delete `SweetHome3DJS` database |
 | Unity build must exist for Docker | **Two folders are involved** (see "Unity WebGL build location" below). `unity-build/` is used by the Vite dev server directly. For Docker, the files must be manually synced to `sweethome3d/www/unity-visualizer/` before running `docker-compose up --build`, because the Dockerfile build context (`./sweethome3d`) cannot reach the repo-root `unity-build/` folder. If `sweethome3d/www/unity-visualizer/Build/` is missing, the Unity tab will show a blank iframe. |
 | `X-Frame-Options: SAMEORIGIN` | Already set in nginx.conf. This allows the Unity iframe because both the parent Vue app and the iframe origin are on the same host/port. No change needed |
+| **Unity `index.html` has THREE copies — edit the right one** | (1) `smart-home-visualizer/Assets/WebGLTemplates/SmartHome3D/index.html` — the **real source**, regenerated by Unity on every WebGL export (`webGLTemplate: PROJECT:SmartHome3D` in `ProjectSettings.asset`). (2) `unity-build/index.html` — last export's output, what `scripts/setup.sh` reads *from*. (3) `sweethome3d/www/unity-visualizer/index.html` — the deployed copy, what `scripts/setup.sh` syncs *into* (via `rm -rf` + `cp -a unity-build/`). **Editing only (2) or (3) is silently lost**: `setup.sh` wipes (3) from (2) on every run, and the next Unity re-export wipes (2) from (1). Any change to the Unity HTML/JS shell (e.g. the standalone `?homeId=` loader, the `LOAD_HOME`/`postMessage` listener) must be made in **all three**, starting with (1). This bit us twice in one session — first editing (3) directly (wiped by `setup.sh`), then editing (2) only (would've been wiped by the next Unity build) |
+| `clear_env = no` required in `php82/php-fpm.conf` | PHP-FPM defaults to wiping the worker process's environment before running any script, keeping only explicitly whitelisted vars. Without `clear_env = no` in the `[www]` pool, `getenv('SUPERVISOR_TOKEN')` always returns `false` — even though Supervisor genuinely injects the token into the container — breaking `addDashboardCard.php`, `listDashboards.php`, and the pre-existing `haApiProxy.php`. Only observable on a real HAOS/Supervised instance; local docker-compose never has `SUPERVISOR_TOKEN` set at all (no Supervisor process exists there), so `no_supervisor_token` there is expected/by-design, not this bug |
+| Lovelace dashboards/cards/resources are WebSocket-only | No REST endpoint exists for any `lovelace/*` operation — `http://supervisor/core/api/lovelace/resources` (and similar) returns 404. Always go through `www/lib/LovelaceWs.php`'s WS client; do not add a `curl`-based REST call for Lovelace data, it will silently fail (this was the original sidebar-icon registration bug) |
 
 ---
 
@@ -882,7 +924,7 @@ This app works with the **Unity Smart Home Visualizer** (`smart-home-visualizer`
 - AGENTS.md: `../smart-home-visualizer/AGENTS.md`
 - Import side: `SceneAutoSetup.cs` loads the exported ZIP + JSON
 - Unity WebGL build is placed at `ha-sweethome3d/unity-build/` and served at `/unity-visualizer/`
-- Config bridge: `smart-home-visualizer/Assets/WebGLTemplates/Default/index.html` reads from `localStorage['ha-smart-home-settings']` which is written by `settingsStore.ts`
+- Config bridge: `smart-home-visualizer/Assets/WebGLTemplates/SmartHome3D/index.html` reads from `localStorage['ha-smart-home-settings']` which is written by `settingsStore.ts`. **This is the actual active template** — confirmed via `ProjectSettings.asset` (`webGLTemplate: PROJECT:SmartHome3D`); it is the true source for every Unity-generated `index.html`, see Known Gotchas
 
 ### Repository relationship
 
@@ -919,5 +961,5 @@ The `StreamingAssets/smart-viz-files/` data bundled in the Unity build is only a
 
 ---
 
-*Last updated: March 30, 2026*
+*Last updated: June 21, 2026*
 

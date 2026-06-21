@@ -135,42 +135,18 @@ fi
 
 # ── Register icon module as Lovelace resource (storage mode only) ──────────
 # Only runs when the Supervisor token is available (i.e. inside a real HA addon environment).
+# Lovelace resource management has no REST equivalent in HA core — it's
+# WebSocket-only — so this shells out to a small native-PHP WS client
+# (see www/lib/LovelaceWs.php, also used by the "Add to Dashboard" feature)
+# instead of hitting a REST path that doesn't exist.
 if [ -n "${SUPERVISOR_TOKEN:-}" ] && [ -d "/homeassistant" ]; then
-    HA_API="http://supervisor/core/api"
     ADDON_VER=$(bashio::addon.version 2>/dev/null || echo "dev")
     RES_URL="/local/ha-sweethome3d-icons.js?v=${ADDON_VER}"
 
-    EXISTING=$(curl -sSf \
-        -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
-        "${HA_API}/lovelace/resources" 2>/dev/null || echo "[]")
-
-    # Remove stale entries from previous addon versions
-    echo "${EXISTING}" | python3 -c "
-import sys, json
-try:
-    for r in json.load(sys.stdin):
-        if 'ha-sweethome3d-icons' in r.get('url','') and r.get('id'):
-            print(r['id'])
-except:
-    pass
-" 2>/dev/null | while read -r OLD_ID; do
-        curl -sSf -X DELETE \
-            -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
-            "${HA_API}/lovelace/resources/${OLD_ID}" >/dev/null 2>&1 || true
-        bashio::log.info "Removed stale Lovelace resource id=${OLD_ID}"
-    done
-
-    # Register the current version
-    REG=$(curl -sSf -X POST \
-        -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d "{\"res_type\":\"module\",\"url\":\"${RES_URL}\"}" \
-        "${HA_API}/lovelace/resources" 2>/dev/null || echo "{}")
-
-    if echo "${REG}" | python3 -c "import sys,json; exit(0 if json.load(sys.stdin).get('id') else 1)" 2>/dev/null; then
+    if php82 /var/www/html/lib/registerIcon.php "${RES_URL}" "ha-sweethome3d-icons" 2>/var/log/register-icon.log; then
         bashio::log.info "Lovelace resource registered: ${RES_URL}"
     else
-        bashio::log.warning "Could not auto-register Lovelace resource (YAML-mode Lovelace?)"
+        bashio::log.warning "Could not auto-register Lovelace resource (YAML-mode Lovelace?) — see /var/log/register-icon.log"
         bashio::log.warning "Add manually: url=${RES_URL} type=module"
     fi
 fi
