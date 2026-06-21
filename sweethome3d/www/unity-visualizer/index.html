@@ -138,6 +138,26 @@
         }
       });
 
+      // Standalone load: when embedded directly as an HA dashboard iframe card
+      // (no parent app to postMessage LOAD_HOME), read homeId from the URL instead.
+      var standaloneHomeId = new URLSearchParams(window.location.search).get('homeId');
+      if (standaloneHomeId) {
+        var basePath = window.location.pathname;
+        var unitySegment = '/unity-visualizer';
+        var unityIndex = basePath.indexOf(unitySegment);
+        if (unityIndex >= 0) basePath = basePath.slice(0, unityIndex);
+        basePath = basePath.replace(/\/+$/, '');
+        var baseUrl = basePath ? window.location.origin + basePath : window.location.origin;
+
+        var standalonePayload = JSON.stringify({ homeId: standaloneHomeId, baseUrl: baseUrl });
+        console.log('[SmartHome] Standalone load for homeId:', standaloneHomeId);
+        if (window.unityInstance) {
+          window.unityInstance.SendMessage('SceneSetup', 'LoadHomeFromWeb', standalonePayload);
+        } else {
+          window.pendingLoadHome = standalonePayload;
+        }
+      }
+
       console.log('[SmartHome] Config ready. HA address:',
         window.smartHomeConfig.homeAssistant.address || '(not configured — set in HA Add-on Configuration)');
     })();
