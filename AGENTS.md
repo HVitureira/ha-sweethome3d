@@ -13,7 +13,6 @@ This document provides comprehensive context for LLM agents working on this modi
 - Custom "Smart Devices" furniture catalog (sensors, switches with `ha_` prefix catalog IDs)
 - **Smart Lights**: Support for `ha_light` and `ha_switch` devices (exported as `type: light` / `type: switch`)
 - HA Entity ID field in furniture dialog (visible only for smart devices)
-- Effect radius slider per device (for particle system bounds in Unity)
 - OBJ + MTL + textures export to ZIP for Unity 3D model loading
 - Device metadata JSON export (positions, entity IDs, rooms, walls)
 - Auto-generated Unity C# import script
@@ -338,7 +337,7 @@ Uses Vue `<Teleport>` to inject HA fields **into** the live SweetHome3D dialog g
 ```
 
 Fields shown conditionally:
-- `store.isSmartDevice` â†’ HA Entity ID input + Effect Radius slider
+- `store.isSmartDevice` â†’ HA Entity ID input
 - `store.isSwitchDevice` â†’ Controls Entity ID input + Switch Type select
 
 #### 3. Pinia store â€” `furnitureStore.ts`
@@ -347,7 +346,6 @@ Single source of truth for the currently-selected furniture piece's HA propertie
 | Ref | Type | Property key |
 |-----|------|-------------|
 | `haEntityId` | `string` | `'haEntityId'` |
-| `effectRadius` | `number` | `'effectRadius'` |
 | `controlsEntityId` | `string` | `'controlsEntityId'` |
 | `switchType` | `'pressure' \| 'fixed'` | `'switchType'` |
 
@@ -505,11 +503,6 @@ Contains:
     "rotation": { "x": 0, "y": 0, "z": 0, "w": 1 },
     "haEntityId": "sensor.living_room_temperature",
     "displaySuffix": "Â°C",
-    "affectedArea": {
-      "type": "room_filled",
-      "vertices": [{"x": 0, "y": 0, "z": 0}, ...],
-      "height": 2.5
-    },
     "particleSettings": { "spawnRate": 50, "particleSize": 0.05, ... }
   }],
   "rooms": [{ "name": "Living Room", "points": [...], "ceilingHeight": 2.5 }],
@@ -533,20 +526,15 @@ Contains:
    - Input with pattern validation: `[a-z_]+\.[a-z0-9_]+`
    - Stored via `furniture.setProperty('haEntityId', value)`
 
-2. **Effect Radius Slider** (line ~552-571)
-   - Range: 0.5m to 15m, step 0.5
-   - Controls particle system bounds in Unity
-   - Displayed only for smart devices
-
-3. **Export Buttons** (floating, bottom-right)
+2. **Export Buttons** (floating, bottom-right)
    - "ðŸ“¦ Export for Unity" â†’ full export (geometry + JSON + C# script)
    - "ðŸ”· Export to OBJ" â†’ geometry only
 
-4. **Smart Device Counter** (catalog panel, bottom-right)
+3. **Smart Device Counter** (catalog panel, bottom-right)
    - Shows count of IoT devices in current design
    - Updated every 2 seconds
 
-5. **Keyboard Shortcuts**
+4. **Keyboard Shortcuts**
    - `Ctrl+E` â†’ Export for Unity
    - `Ctrl+Shift+E` â†’ Export to OBJ
 
@@ -616,8 +604,6 @@ class UnityExportUtilities {
   static exportForUnity(home, component3D, baseName)  // Complete export
   static extractDeviceMetadata(home)                   // IoT device data
   static isIoTDevice(catalogId, piece)                 // Detection logic
-  static extractEffectPropagation(piece, home)         // Particle bounds
-  static calculateRoomFilledArea(x, y, maxRadius, home) // Wall-constrained area
   static getParticleSettings(deviceType, particleType)  // Unity particle config
   static generateUnityImportScript(baseName, data)      // C# script generation
 }
@@ -779,7 +765,6 @@ else:
 | Field | Condition | Store ref | Property key |
 |-------|-----------|-----------|-------------|
 | HA Entity ID | `isSmartDevice` | `haEntityId` | `'haEntityId'` |
-| Effect Radius slider | `isSmartDevice` | `effectRadius` | `'effectRadius'` |
 | Controls Entity ID | `isSwitchDevice` | `controlsEntityId` | `'controlsEntityId'` |
 | Switch Type select | `isSwitchDevice` | `switchType` | `'switchType'` |
 
@@ -892,7 +877,7 @@ docker-compose up --build
 | `sweethome3d.min.js` is 2.5MB | Do NOT modify; all customizations via separate scripts |
 | Furniture model loading is async | `exportModelFromURL()` uses JSZip to load from URLs |
 | Entity ID persistence | Uses `furniture.setProperty()` / `getProperty()` API |
-| Effect radius renderer | `effect-radius-renderer.js` removed â€” was commented out and non-functional |
+| Effect radius (removed) | UI slider, store ref, `extractEffectPropagation`, and `calculate*Area` helpers were removed; export JSON no longer emits `effectRadius`, `propagationType`, or `affectedArea` |
 | Coordinate units | SH3D internal = cm; JSON export = meters; OBJ geometry = cm |
 | Material color parsing | Historical bug with `flyellow` appearing pink â€” fixed via `objDefaults.js` |
 | Vue dialog detection guard | `isLiveDialog()` checks `el.closest('.dialog-template') === null` â€” SH3D keeps a hidden template copy in the DOM at all times; without this guard the observer fires twice |

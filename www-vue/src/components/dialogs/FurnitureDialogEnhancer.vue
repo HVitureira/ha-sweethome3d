@@ -15,27 +15,6 @@
             @update:model-value="onEntityIdChange"
           />
         </div>
-
-        <!-- Effect Radius -->
-        <div class="ha-only ha-effect-radius-row">
-          <div class="ha-effect-radius-label">
-            📡 Effect Radius
-          </div>
-          <div class="ha-effect-radius-controls">
-            <input
-              type="range"
-              min="0.5"
-              max="15"
-              step="0.5"
-              :value="store.effectRadius"
-              class="ha-range-input"
-              @input="onRadiusInput"
-            />
-            <span class="ha-range-value">
-              {{ store.effectRadius.toFixed(1) }}m
-            </span>
-          </div>
-        </div>
       </template>
 
       <!-- Controls Entity ID + Switch Type — switch devices only -->
@@ -87,12 +66,6 @@ function onEntityIdChange(value: string): void {
   store.commitProperty('haEntityId', value)
 }
 
-function onRadiusInput(e: Event): void {
-  const value = parseFloat((e.target as HTMLInputElement).value)
-  store.effectRadius = value
-  store.commitProperty('effectRadius', String(value))
-}
-
 function onControlsEntityChange(value: string): void {
   store.controlsEntityId = value
   store.commitProperty('controlsEntityId', value)
@@ -115,38 +88,6 @@ function onSwitchTypeChange(e: Event): void {
   font-size: 0.85em;
   color: #666;
   margin-top: 0.3em;
-}
-
-.ha-effect-radius-row {
-  grid-column: 1 / -1;
-  margin-top: 15px;
-}
-
-.ha-effect-radius-label {
-  color: #666;
-  font-size: 12px;
-  margin-bottom: 5px;
-  font-weight: 500;
-}
-
-.ha-effect-radius-controls {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.ha-range-input {
-  flex: 1;
-  cursor: pointer;
-  height: 6px;
-}
-
-.ha-range-value {
-  min-width: 50px;
-  text-align: right;
-  font-family: monospace;
-  font-weight: bold;
-  color: #0066cc;
 }
 
 .ha-select {

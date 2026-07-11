@@ -45,7 +45,7 @@ async function doFetch(): Promise<HAEntity[]> {
   if (settings.token) headers['X-HA-Token'] = settings.token
   headers['X-HA-SSL'] = String(settings.useSSL)
 
-  const resp = await fetch('/haApiProxy.php', { headers })
+  const resp = await fetch('haApiProxy.php', { headers })
 
   // Check for error responses (JSON with .error field)
   if (!resp.ok) {

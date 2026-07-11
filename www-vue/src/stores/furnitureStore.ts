@@ -6,7 +6,6 @@ import { getCustomProperty, setCustomProperty } from '@/services/furnitureServic
 export const useFurnitureStore = defineStore('furniture', () => {
   const activeController = ref<SH3DFurniture | null>(null)
   const haEntityId = ref('')
-  const effectRadius = ref(3.0)
   const controlsEntityId = ref('')
   const switchType = ref<'pressure' | 'fixed'>('fixed')
   const pendingProps = ref<Record<string, string>>({})
@@ -21,7 +20,6 @@ export const useFurnitureStore = defineStore('furniture', () => {
   function loadFromController(controller: SH3DFurniture): void {
     activeController.value = controller
     haEntityId.value = getCustomProperty(controller, 'haEntityId') ?? ''
-    effectRadius.value = parseFloat(getCustomProperty(controller, 'effectRadius') ?? '3.0')
     controlsEntityId.value = getCustomProperty(controller, 'controlsEntityId') ?? ''
     const storedType = getCustomProperty(controller, 'switchType')
     switchType.value = storedType === 'pressure' ? 'pressure' : 'fixed'
@@ -44,7 +42,6 @@ export const useFurnitureStore = defineStore('furniture', () => {
   function reset(): void {
     activeController.value = null
     haEntityId.value = ''
-    effectRadius.value = 3.0
     controlsEntityId.value = ''
     switchType.value = 'fixed'
     pendingProps.value = {}
@@ -53,7 +50,6 @@ export const useFurnitureStore = defineStore('furniture', () => {
   return {
     activeController,
     haEntityId,
-    effectRadius,
     controlsEntityId,
     switchType,
     pendingProps,
