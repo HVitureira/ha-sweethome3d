@@ -8,6 +8,24 @@
         <strong>Home Assistant &rarr; Add-ons &rarr; SweetHome3D &rarr; Configuration</strong>.
       </div>
 
+      <!-- Token status: red warning if neither localStorage nor the add-on fallback has a token;
+           green confirmation if the add-on fallback token is configured. -->
+      <div v-if="missingToken" class="token-warning">
+        <span class="token-warning-icon">&#9888;</span>
+        <span>
+          No Home Assistant access token configured. Open
+          <strong>Home Assistant &rarr; Add-ons &rarr; SweetHome3D &rarr; Configuration</strong>,
+          set the <em>Home Assistant Token</em> field, then restart the add-on.
+          Temperature and sensor overlays will not update without it.
+        </span>
+      </div>
+      <div v-else-if="hasAddonToken" class="token-confirmed">
+        <span class="token-confirmed-icon">&#10003;</span>
+        <span>
+          Add-on fallback token is configured &mdash; sensor overlays will work for all users.
+        </span>
+      </div>
+
       <!-- Visualization -->
       <section class="settings-section">
         <h3 class="section-title">Visualization</h3>
@@ -86,11 +104,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useHaAddonTokenStatus } from '@/composables/useHaAddonTokenStatus'
 
 const store = useSettingsStore()
 const saved = ref(false)
+
+const { hasAddonToken } = useHaAddonTokenStatus()
+
+const missingToken = computed(() =>
+  !store.settings.homeAssistantAccessToken && !hasAddonToken.value
+)
 
 // Only expose viz + connection tuning fields for local editing
 const local = reactive({
@@ -178,6 +203,55 @@ function resetToDefaults() {
 
 .addon-config-note strong {
   color: #9cb0d8;
+}
+
+.token-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #2a1414;
+  border: 1px solid #6a2a2a;
+  border-left: 3px solid #e07070;
+  border-radius: 6px;
+  padding: 12px 16px;
+  font-size: 12px;
+  color: #ffb0b0;
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.token-warning-icon {
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+.token-warning strong {
+  color: #ffd0d0;
+}
+
+.token-warning em {
+  color: #ffe0a0;
+  font-style: italic;
+}
+
+.token-confirmed {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #14281a;
+  border: 1px solid #2a5a3a;
+  border-left: 3px solid #4cc38a;
+  border-radius: 6px;
+  padding: 12px 16px;
+  font-size: 12px;
+  color: #a0d8b0;
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.token-confirmed-icon {
+  flex-shrink: 0;
+  font-size: 14px;
 }
 
 .settings-section {

@@ -39,6 +39,50 @@ function showNotification(message: string, type: string) {
   setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast) }, 5000)
 }
 
+function showSuccessModal(deviceCount: number | string) {
+  const backdrop = document.createElement('div')
+  backdrop.className = 'ha-success-backdrop'
+
+  const card = document.createElement('div')
+  card.className = 'ha-success-card'
+
+  const heading = document.createElement('div')
+  heading.className = 'ha-success-heading'
+  heading.textContent = '\u2705 House Exported successfully!'
+  card.appendChild(heading)
+
+  const detail = document.createElement('div')
+  detail.className = 'ha-success-detail'
+  if (deviceCount === 0) {
+    detail.textContent = '0 devices exported \u2014 did you mark any furniture as HA smart devices?'
+    detail.style.color = '#FF9800'
+  } else {
+    detail.textContent = `${deviceCount} device(s) exported`
+  }
+  card.appendChild(detail)
+
+  const okBtn = document.createElement('button')
+  okBtn.className = 'ha-success-ok'
+  okBtn.textContent = 'OK'
+
+  let dismissed = false
+  function dismiss() {
+    if (dismissed) return
+    dismissed = true
+    clearTimeout(timer)
+    backdrop.remove()
+  }
+
+  okBtn.onclick = dismiss
+  card.appendChild(okBtn)
+
+  backdrop.appendChild(card)
+  backdrop.onclick = (e) => { if (e.target === backdrop) dismiss() }
+  document.body.appendChild(backdrop)
+
+  const timer = setTimeout(dismiss, 5000)
+}
+
 function showLoading(message: string) {
   const overlay = document.createElement('div')
   overlay.id = 'ha-loading-overlay'
@@ -145,10 +189,7 @@ async function exportForUnity() {
       showNotification('⚠️ Nothing captured — OBJExporter may not be loaded yet.', 'warning')
     } else {
       const devCount = result?.devices ?? '?'
-      showNotification(
-        `✅ Exported for Unity — ${serverResults.join(', ')} · ${devCount} device(s)`,
-        'success',
-      )
+      showSuccessModal(devCount)
     }
     console.log('✅ Unity export complete. Saved:', serverResults)
   } catch (e: any) {
@@ -248,6 +289,55 @@ onUnmounted(() => { document.removeEventListener('keydown', onKeyDown) })
 .ha-loading-icon {
   font-size: 18px;
   margin-bottom: 10px;
+}
+
+/* ── Centered success modal (replaces top-right toast on "Export for Unity" success) ── */
+.ha-success-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ha-success-card {
+  background: #161630;
+  color: #d0d0f0;
+  border: 1px solid #3a3a6a;
+  border-radius: 8px;
+  padding: 28px 36px;
+  text-align: center;
+  font-family: system-ui, sans-serif;
+  min-width: 320px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.ha-success-heading {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.ha-success-detail {
+  font-size: 13px;
+  color: #9090c0;
+  margin-bottom: 18px;
+}
+
+.ha-success-ok {
+  background: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 7px 24px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ha-success-ok:hover {
+  background: #45a049;
 }
 </style>
 

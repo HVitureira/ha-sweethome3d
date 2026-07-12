@@ -31,6 +31,44 @@ export default defineConfig({
             return
           }
 
+          // --- listHomesExtended.php: scan test-data/ for .sh3x + sidecars ---
+          // Mirrors the production PHP endpoint used by UnityView's home dropdown.
+          if (urlPath === '/listHomesExtended.php') {
+            res.setHeader('Content-Type', 'application/json')
+            if (!fs.existsSync(dataDir)) { res.end('[]'); return }
+            const homes = fs.readdirSync(dataDir)
+              .filter(f => f.endsWith('.sh3x'))
+              .map(f => {
+                const id = f.slice(0, -5)
+                return {
+                  id,
+                  hasDevices:  fs.existsSync(path.join(dataDir, id + '_devices.json')),
+                  hasGeometry: fs.existsSync(path.join(dataDir, id + '_geometry.zip')),
+                }
+              })
+            res.end(JSON.stringify(homes))
+            return
+          }
+
+          // --- haConfigStatus.php: privacy-safe probe of test-data/ha-config.json ---
+          // Mirrors the production PHP endpoint used by the token-missing banner.
+          // Returns { hasAddress: bool, hasToken: bool } — never the values.
+          if (urlPath === '/haConfigStatus.php') {
+            res.setHeader('Content-Type', 'application/json')
+            const configPath = path.resolve(dataDir, 'ha-config.json')
+            let hasAddress = false
+            let hasToken = false
+            try {
+              if (fs.existsSync(configPath)) {
+                const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+                hasAddress = !!(cfg.homeAssistantAddress && cfg.homeAssistantAddress !== '')
+                hasToken   = !!(cfg.homeAssistantAccessToken && cfg.homeAssistantAccessToken !== '')
+              }
+            } catch { /* no config file */ }
+            res.end(JSON.stringify({ hasAddress, hasToken }))
+            return
+          }
+
           // --- writeData.php: write to test-data/ ---
           if (urlPath === '/writeData.php') {
             const urlObj = new URL(req.url!, `http://${req.headers.host}`)

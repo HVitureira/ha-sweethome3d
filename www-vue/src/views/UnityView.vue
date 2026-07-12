@@ -1,5 +1,15 @@
 <template>
   <div class="unity-view">
+    <!-- Token-missing banner (shown when neither localStorage nor the add-on fallback has a token) -->
+    <div v-if="missingToken" class="token-missing-banner">
+      <span class="token-missing-icon">&#9888;</span>
+      <span class="token-missing-text">
+        Home Assistant access token is not set &mdash; temperature and sensor overlays will not update.
+        Set it in <strong>Home Assistant &rarr; Add-ons &rarr; SweetHome3D &rarr; Configuration</strong>,
+        then restart the add-on.
+      </span>
+    </div>
+
     <!-- Home Selector Bar -->
     <div class="home-selector-bar">
       <label for="ha-home-select" class="home-selector-label">Home:</label>
@@ -104,8 +114,11 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useHaAddonTokenStatus } from '@/composables/useHaAddonTokenStatus'
 
 defineOptions({ name: 'UnityView' })
+
+const { hasAddonToken, refresh: refreshAddonTokenStatus } = useHaAddonTokenStatus()
 
 interface HomeEntry {
   id: string
@@ -122,6 +135,12 @@ const settingsStore = useSettingsStore()
 const homes = ref<HomeEntry[]>([])
 const selectedHomeId = ref<string>('')
 const selectedHome = computed(() => homes.value.find(h => h.id === selectedHomeId.value) ?? null)
+
+// Banner appears only when BOTH localStorage AND the add-on fallback lack a token,
+// mirroring exactly what Unity's index.html checks (localStorage → ha-config.json).
+const missingToken = computed(() =>
+  !settingsStore.settings.homeAssistantAccessToken && !hasAddonToken.value
+)
 
 interface DashboardView {
   index: number
@@ -291,12 +310,20 @@ async function fetchHomes() {
   try {
     const resp = await fetch('listHomesExtended.php')
     if (resp.ok) {
-      homes.value = await resp.json()
-      // Default to the currently open SH3D home if possible
-      const currentName: string =
-        (window as any).application?.getHomes?.()[0]?.getName?.() ?? ''
-      const match = homes.value.find(h => h.id === currentName)
-      selectedHomeId.value = match?.id ?? homes.value[0]?.id ?? ''
+      const newHomes: HomeEntry[] = await resp.json()
+      homes.value = newHomes
+      // Preserve the current selection if it still exists; otherwise default to
+      // the currently open SH3D home, else first. This prevents the subtle bug
+      // where the user picked home A in Unity but is editing home B in SH3D —
+      // the old "always re-derive" logic would yank their selection to B on
+      // every tab switch.
+      const stillExists = newHomes.find(h => h.id === selectedHomeId.value)
+      if (!stillExists) {
+        const currentName: string =
+          (window as any).application?.getHomes?.()[0]?.getName?.() ?? ''
+        const match = newHomes.find(h => h.id === currentName)
+        selectedHomeId.value = match?.id ?? newHomes[0]?.id ?? ''
+      }
     }
   } catch (e) {
     console.warn('[UnityView] Could not load home list:', e)
@@ -318,10 +345,23 @@ onMounted(async () => {
 
 })
 
-watch(() => route.path, (path) => {
-  if (path === '/visualizer' && hasLoaded.value) {
-    writeConfigToStorage()
-    sendConfigToIframe()
+watch(() => route.path, async (path) => {
+  if (path === '/visualizer') {
+    // Refresh the home list — a new home may have been saved/exported
+    // on the Floor Plan tab since the last visit.
+    await fetchHomes()
+    // Refresh add-on token status too — the user may have just configured
+    // the token in HA add-on config and returned (Path B = addon restart +
+    // iframe reload, but a fresh re-fetch keeps the banner honest either way).
+    refreshAddonTokenStatus()
+    if (hasLoaded.value) {
+      writeConfigToStorage()
+      sendConfigToIframe()
+      // Re-send LOAD_HOME so Unity picks up any re-exported geometry for
+      // the currently selected home (bug: "exported a new house, but the
+      // 3D scene inside Unity still reflects the previous export").
+      if (selectedHomeId.value) sendLoadHome(selectedHomeId.value)
+    }
   }
 })
 </script>
@@ -338,6 +378,35 @@ watch(() => route.path, (path) => {
   z-index: 1500;
   display: flex;
   flex-direction: column;
+}
+
+/* ── Token-missing banner (between tab bar and home selector) ── */
+.token-missing-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #3a1414;
+  border-bottom: 1px solid #8a2a2a;
+  color: #ffb0b0;
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 1.45;
+  flex-shrink: 0;
+}
+
+.token-missing-icon {
+  flex-shrink: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.token-missing-text {
+  flex: 1;
+}
+
+.token-missing-banner strong {
+  color: #ffd0d0;
 }
 
 /* ── Home Selector Bar ── */
