@@ -327,9 +327,12 @@
       // config.devicePixelRatio = 1;
 
     } else {
-      // Desktop style: Render the game canvas in a window that can be maximized to fullscreen:
-      canvas.style.width = "960px";
-      canvas.style.height = "600px";
+      // Desktop style: canvas fills the iframe (CSS handles width/height: 100%).
+      // config.matchWebGLToCanvasSize = true (default) keeps the WebGL render
+      // target matched to the canvas DOM size × devicePixelRatio, so Unity's
+      // Camera.aspect auto-derives from the iframe's actual aspect ratio —
+      // wider screens see more horizontally, taller screens see more vertically,
+      // pixels stay square (no letterboxing, no distortion).
     }
 
     document.querySelector("#unity-loading-bar").style.display = "block";

@@ -142,6 +142,19 @@ const missingToken = computed(() =>
   !settingsStore.settings.homeAssistantAccessToken && !hasAddonToken.value
 )
 
+// Snapshot of the home-list state at the time Unity last (re)loaded. Compared on
+// each tab re-entry to decide whether the iframe needs a full reload (the user
+// exported/saved on the Floor Plan tab) or whether a lightweight postMessage
+// LOAD_HOME is enough (just navigated without changes).
+const lastSeenHomesHash = ref<string>('')
+
+function computeHomesHash(): string {
+  return homes.value
+    .map(h => `${h.id}|${h.hasGeometry ? 1 : 0}|${h.hasDevices ? 1 : 0}`)
+    .sort()
+    .join(';')
+}
+
 interface DashboardView {
   index: number
   title: string
@@ -334,6 +347,10 @@ onMounted(async () => {
   await settingsStore.configReady
   writeConfigToStorage()
   await fetchHomes()
+  // Snapshot the home list as it was when Unity first loaded — used by the
+  // route watcher to detect whether anything on the Floor Plan tab changed
+  // the export flags between visits to the Visualizer.
+  lastSeenHomesHash.value = computeHomesHash()
   iframeSrc.value = 'unity-visualizer/index.html'
   iframeRef.value?.addEventListener('load', () => {
     hasLoaded.value = true
@@ -349,7 +366,12 @@ watch(() => route.path, async (path) => {
   if (path === '/visualizer') {
     // Refresh the home list — a new home may have been saved/exported
     // on the Floor Plan tab since the last visit.
+    const prevHash = lastSeenHomesHash.value
     await fetchHomes()
+    const newHash = computeHomesHash()
+    // Empty prevHash means initial mount — the iframe load handler already
+    // sends LOAD_HOME on first init, so don't double-fire.
+    const homesChanged = prevHash !== '' && newHash !== prevHash
     // Refresh add-on token status too — the user may have just configured
     // the token in HA add-on config and returned (Path B = addon restart +
     // iframe reload, but a fresh re-fetch keeps the banner honest either way).
@@ -357,11 +379,23 @@ watch(() => route.path, async (path) => {
     if (hasLoaded.value) {
       writeConfigToStorage()
       sendConfigToIframe()
-      // Re-send LOAD_HOME so Unity picks up any re-exported geometry for
-      // the currently selected home (bug: "exported a new house, but the
-      // 3D scene inside Unity still reflects the previous export").
-      if (selectedHomeId.value) sendLoadHome(selectedHomeId.value)
+      if (homesChanged) {
+        // Something on the Floor Plan tab changed export flags since the last
+        // visit (saved a new home, or re-exported an existing one). Unity's
+        // LoadHomeFromWeb re-entry path works in theory but in practice does
+        // not reliably pick up freshly overwritten server files; a full iframe
+        // reload mirrors the manual "↻ Reload" button that the user already
+        // verified as the working workaround. The iframe load handler will
+        // re-send LOAD_HOME automatically after Unity reinitializes.
+        reloadIframe()
+      } else if (selectedHomeId.value) {
+        // No changes detected — just re-affirm the selected home in case
+        // Unity missed the initial LOAD_HOME (e.g., the user switched tabs
+        // before the 3-second post-init delay elapsed).
+        sendLoadHome(selectedHomeId.value)
+      }
     }
+    lastSeenHomesHash.value = newHash
   }
 })
 </script>
