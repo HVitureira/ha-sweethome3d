@@ -127,7 +127,13 @@ if [ -d "$REPO_ROOT/.git/hooks" ] && [ -f "$SCRIPT_DIR/check-thesis-impact.py" ]
     cat >> "$HOOK_FILE" <<'HOOK'
 
 # thesis-impact-hook (advisory only - never blocks push)
-_TI_PY="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
+_TI_PY=""
+for _cand in python3 python; do
+  if "$_cand" -c "import sys" >/dev/null 2>&1; then
+    _TI_PY="$_cand"
+    break
+  fi
+done
 if [ -n "$_TI_PY" ] && [ -f "scripts/check-thesis-impact.py" ]; then
   "$_TI_PY" scripts/check-thesis-impact.py || true
 fi
