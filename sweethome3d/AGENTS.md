@@ -5,7 +5,7 @@ Docker build context (`./sweethome3d`), Alpine + Nginx + PHP 8.2 + s6-overlay co
 ## Key Ownership
 
 - **Custom export JS (`www/lib/`)**: `objExporter.js`, `unity-export-utils.js`, `obj-exporter-integration.js`, `objDefaults.js`.
-- **DO NOT MODIFY**: `www/lib/sweethome3d.min.js`, `gl-matrix-min.js`, `jszip.min.js`, `graphics2d.min.js`, `geom.min.js`.
+- **DO NOT MODIFY (upstream minified fork base)**: `www/lib/sweethome3d.min.js` (~2.5 MB compressed/minified), `gl-matrix-min.js`, `jszip.min.js`, `graphics2d.min.js`, `geom.min.js`. To search internal SH3D patterns, unminify into `/tmp` or `$env:TEMP` (never into the repo) and grep bounded slices — see [docs/ai/addon-practices.md](../docs/ai/addon-practices.md).
 - **PHP endpoints (`www/`)**: `listHomes.php`, `listHomesExtended.php`, `writeData.php`, `deleteHome.php`, `haApiProxy.php`, `listDashboards.php`, `addDashboardCard.php`, `lib/LovelaceWs.php`, `lib/registerIcon.php`.
 - **Container config (`rootfs/etc/`)**: Nginx (Brotli headers for `/unity-visualizer/`), `php82/php-fpm.conf`, `cont-init.d/`, `services.d/`.
 

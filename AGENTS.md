@@ -1,6 +1,6 @@
 # SweetHome3D HA Add-on (`ha-sweethome3d`) — Agent Guide (Tier 0 Index)
 
-Home Assistant Ingress add-on (Alpine + Nginx + PHP 8.2 + s6-overlay, port 8099) wrapping SweetHome3D JS (`7.5.2`) with a **Vue 3.5 + TypeScript 5.9 + Pinia + Vite 6** overlay (`www-vue/`), OBJ/JSON export pipeline for Unity, embedded Unity WebGL visualizer (`/unity-visualizer/`), and Lovelace dashboard integration (`LovelaceWs.php`).
+Home Assistant Ingress add-on (Alpine + Nginx + PHP 8.2 + s6-overlay, port 8099) built as a **non-invasive fork/augmentation of upstream SweetHome3D JS (`7.5.2`)**, pairing its compressed/minified core bundle with a **Vue 3.5 + TypeScript 5.9 + Pinia + Vite 6** overlay (`www-vue/`), OBJ/JSON export pipeline for Unity, embedded Unity WebGL visualizer (`/unity-visualizer/`), and Lovelace dashboard integration (`LovelaceWs.php`).
 
 ## Commands (macOS & Windows)
 
@@ -16,7 +16,7 @@ Home Assistant Ingress add-on (Alpine + Nginx + PHP 8.2 + s6-overlay, port 8099)
 
 ## Non-Negotiable Invariants
 
-- **Never modify `sweethome3d/www/lib/sweethome3d.min.js`** (2.5 MB core); extend via `www-vue/` or custom JS files.
+- **Fork & minified core JS (`sweethome3d.min.js`, ~2.5 MB)**: Never modify `sweethome3d/www/lib/sweethome3d.min.js` or raw-grep it directly into context (huge single lines). To inspect internal SH3D patterns/APIs, pretty-print/unminify a temporary copy outside Git (`/tmp` or `$env:TEMP`) and search bounded slices only; extend externally via `www-vue/` or custom JS files.
 - **UI fields belong in `www-vue/`** (`FurnitureDialogEnhancer.vue` via `<Teleport>`), never legacy inline HTML in `sweethome3d/www/index.html`.
 - **Keep `#home-pane` CSS & hide method**: `position: absolute; top: 40px` and `visibility: hidden` (never `display: none`). Keep `UnityView` mounted via `v-show` in `App.vue` (never `<KeepAlive>`).
 - **3-copy Unity `index.html` rule**: True source is `../smart-home-visualizer/Assets/WebGLTemplates/SmartHome3D/index.html`; `unity-build/index.html` feeds dev, `sweethome3d/www/unity-visualizer/index.html` feeds Docker. Never patch only (2) or (3).
@@ -31,6 +31,7 @@ Prefer **CodeGraph MCP** (`codegraph_explore`, symbol/caller/impact lookup) over
 
 | Task / Topic | Read This File |
 | :--- | :--- |
+| Add-on practices, fork strategy & unminifying `sweethome3d.min.js` to temp | [docs/ai/addon-practices.md](docs/ai/addon-practices.md) |
 | Vue 3 overlay, routing, Pinia stores, `<Teleport>`, `localStorage` bridge | [docs/ai/vue-overlay.md](docs/ai/vue-overlay.md) & [www-vue/AGENTS.md](www-vue/AGENTS.md) |
 | OBJ/MTL/JSON export pipeline, coordinates, catalog format | [docs/ai/export-pipeline.md](docs/ai/export-pipeline.md) & [sweethome3d/AGENTS.md](sweethome3d/AGENTS.md) |
 | Lovelace WebSocket client (`LovelaceWs.php`), `?homeId=` standalone mode | [docs/ai/lovelace-ws.md](docs/ai/lovelace-ws.md) |
