@@ -1,0 +1,17 @@
+{
+  "exclude": [
+    "www-vue/node_modules/**",
+    "www-vue/dist/**",
+    "test-data/**",
+    "unity-build/**",
+    "sweethome3d/www/assets/**",
+    "sweethome3d/www/unity-visualizer/**",
+    "sweethome3d/www/data/**",
+    "sweethome3d/www/lib/resources/**",
+    "sweethome3d/www/lib/*.min.js",
+    "sweethome3d/www/lib/*-min.js",
+    "sweethome3d/www/lib/batik-svgpathparser.js",
+    "sweethome3d/www/lib/json-org.js",
+    "sweethome3d/www/lib/jsxmlsaxparser.js"
+  ]
+}

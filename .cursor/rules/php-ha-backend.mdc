@@ -1,0 +1,15 @@
+---
+description: PHP 8.2, Supervisor WebSocket, Nginx, and s6-overlay container guardrails
+globs:
+  - "sweethome3d/www/**/*.php"
+  - "sweethome3d/rootfs/**/*"
+alwaysApply: false
+---
+
+# PHP & Home Assistant Add-on Container Guardrails
+
+- All Lovelace operations (`lovelace/*`) are WebSocket-only via `sweethome3d/www/lib/LovelaceWs.php` (`ws://supervisor/core/websocket`). Never add REST calls to `supervisor/core/api/lovelace/*` or shell out to Python.
+- Keep `clear_env = no` in `rootfs/etc/php82/php-fpm.conf` so `SUPERVISOR_TOKEN` stays visible to PHP-FPM workers.
+- Preserve Nginx Brotli headers (`Content-Encoding: br`, `gzip off`) for `/unity-visualizer/*.br` assets and `X-Frame-Options: SAMEORIGIN`.
+- Keep LF (`\n`) line endings on all shell/s6 scripts under `rootfs/etc/cont-init.d/` and `rootfs/etc/services.d/`.
+- Read `docs/ai/lovelace-ws.md` and `docs/ai/known-gotchas.md` before modifying HA integration endpoints.

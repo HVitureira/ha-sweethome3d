@@ -1,4 +1,7 @@
-# Enforce LF for executable scripts used in Linux containers
+# Enforce LF for executable scripts used in Linux containers & macOS
 *.sh text eol=lf
+*.py text eol=lf
+*.ps1 text eol=crlf
 sweethome3d/rootfs/etc/services.d/**/run text eol=lf
 sweethome3d/rootfs/etc/services.d/**/finish text eol=lf
+

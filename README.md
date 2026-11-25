@@ -193,6 +193,56 @@ After verifying locally, commit the updated files:
 - `sweethome3d/www/index.html` (updated script/link tags)
 - Any changed source files in `www-vue/src/`
 
+## AI Agent Setup
+
+This repository is standalone and pre-configured for **Antigravity**, **Claude Code**, **Cursor**, **OpenCode**, and **GitHub Copilot / Codex** using a 3-tier Progressive Disclosure layout and **CodeGraph MCP** (`@colbymchenry/codegraph`).
+
+### 1. One-Command Bootstrap (macOS/Linux & Windows)
+
+```bash
+# macOS / Linux
+./scripts/ai-setup.sh
+```
+
+```powershell
+# Windows (PowerShell)
+.\scripts\ai-setup.ps1
+```
+
+Running `ai-setup` automatically:
+1. Installs pinned public skills from [skills.manifest.json](skills.manifest.json) via `npx skills add`
+2. Bridges `.agents/skills/*` → `.claude/skills/*` (symlinks on macOS/Linux, admin-free NTFS Junctions on Windows) for Claude Code
+3. Installs `@colbymchenry/codegraph` (if missing) and indexes `www-vue/src/`, PHP endpoints, and custom export JS into `.codegraph/` (excluding `sweethome3d.min.js`, `node_modules/`, and built bundles via [codegraph.json](codegraph.json))
+4. Registers the `codegraph` MCP server in Antigravity's global `mcp_config.json` (Claude Code, Cursor, and OpenCode read committed `.mcp.json`, `.cursor/mcp.json`, and `opencode.json`)
+5. Runs [scripts/check-ai-setup.py](scripts/check-ai-setup.py) to enforce Progressive Disclosure budgets and LF script endings
+
+### 2. Skills Inventory
+
+| Skill | Type | Source / Location | Purpose |
+| :--- | :--- | :--- | :--- |
+| `new-ha-device` | Local (committed) | [.agents/skills/new-ha-device/SKILL.md](.agents/skills/new-ha-device/SKILL.md) | Add/replace HA 3D smart device models & update `DefaultFurnitureCatalog.json` |
+| `release-and-deploy-addon` | Local (committed) | [.agents/skills/release-and-deploy-addon/SKILL.md](.agents/skills/release-and-deploy-addon/SKILL.md) | Build Vue, sync Unity assets, verify LF/assets, deploy to HA or GitHub |
+| `vue-best-practices`, `vue-pinia-best-practices` | Public (manifest) | `npx skills add vuejs-ai/skills --skill vue-best-practices --skill vue-pinia-best-practices -y` | Modern Vue 3 Composition API, TypeScript & Pinia patterns |
+| `vite` | Public (manifest) | `npx skills add antfu/skills --skill vite -y` | Vite 6 plugins & middleware patterns |
+| `diagnosing-bugs`, `handoff` | Public (manifest) | `npx skills add mattpocock/skills --skill diagnosing-bugs --skill handoff -y` | Structured debugging & session handoff |
+
+### 3. Verification & Maintenance Scripts
+
+| Script | macOS / Linux | Windows | Purpose |
+| :--- | :--- | :--- | :--- |
+| Verify add-on, Vue & LF endings | `./scripts/verify.sh --full` | `.\scripts\verify.ps1` | Checks config, hashed Vue assets, `vue-tsc`, LF endings, Unity `index.html` sync |
+| Audit AI setup & budgets | `python3 scripts/check-ai-setup.py` | `python scripts/check-ai-setup.py` | Enforces Tier 0/1/2 size budgets, valid JSON/frontmatter, LF scripts |
+| Refresh CodeGraph index | `codegraph sync` | `codegraph sync` | Updates local `.codegraph/` AST index after refactors |
+
+### 4. Relevant AI Files & Companion Repos
+
+- **Standing Rules**: [AGENTS.md](AGENTS.md) · [CLAUDE.md](CLAUDE.md)
+- **Subtree Rules**: [www-vue/AGENTS.md](www-vue/AGENTS.md) · [sweethome3d/AGENTS.md](sweethome3d/AGENTS.md)
+- **Cursor Glob Rules**: [.cursor/rules/vue-overlay.mdc](.cursor/rules/vue-overlay.mdc) · [.cursor/rules/php-ha-backend.mdc](.cursor/rules/php-ha-backend.mdc) · [.cursor/rules/sh3d-export.mdc](.cursor/rules/sh3d-export.mdc)
+- **MCP & Harness Configs**: [.mcp.json](.mcp.json) · [.cursor/mcp.json](.cursor/mcp.json) · [opencode.json](opencode.json) · [skills.manifest.json](skills.manifest.json)
+- **Deep References (Tier 2)**: [docs/ai/vue-overlay.md](docs/ai/vue-overlay.md) · [docs/ai/export-pipeline.md](docs/ai/export-pipeline.md) · [docs/ai/lovelace-ws.md](docs/ai/lovelace-ws.md) · [docs/ai/known-gotchas.md](docs/ai/known-gotchas.md) · [docs/ai/mcp-setup.md](docs/ai/mcp-setup.md)
+- **Recommended Side-by-Side Sibling Repos**: `../smart-home-visualizer/` (Unity 6 visualizer) · `../smart-home-thesis-intro/` (thesis & papers)
+
 ## Support
 
 For issues with these add-ons, please [open an issue](https://github.com/HVitureira/ha-sweethome3d/issues) on GitHub.

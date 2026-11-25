@@ -72,3 +72,17 @@ unity-build/TemplateData/
 unity-build/StreamingAssets/
 unity-build/index.html
 !unity-build/.gitkeep
+
+# AI agent local state, generated bridges & CodeGraph index
+.codegraph/
+.claude/settings.local.json
+.claude/skills/
+.opencode/node_modules/
+.agents/skills/*
+!.agents/skills/new-ha-device/
+!.agents/skills/release-and-deploy-addon/
+__pycache__/
+*.pyc
+nul
+NUL
+

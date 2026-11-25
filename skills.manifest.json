@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "repo": "ha-sweethome3d",
+  "skills": [
+    {
+      "source": "vuejs-ai/skills",
+      "skills": [
+        "vue-best-practices",
+        "vue-pinia-best-practices"
+      ],
+      "notes": "Vue 3 Composition API, TypeScript, and Pinia setup store patterns"
+    },
+    {
+      "source": "antfu/skills",
+      "skills": [
+        "vite"
+      ],
+      "notes": "Vite 6 middleware and plugin architecture"
+    },
+    {
+      "source": "mattpocock/skills",
+      "skills": [
+        "diagnosing-bugs",
+        "handoff"
+      ],
+      "notes": "Structured bug diagnosis and clean session handoff"
+    }
+  ]
+}
