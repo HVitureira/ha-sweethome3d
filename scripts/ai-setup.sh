@@ -117,6 +117,26 @@ else:
 PY
 fi
 
+# 4b. Install advisory Git pre-push hook for thesis-impact checks (preserves existing hooks like Git LFS)
+if [ -d "$REPO_ROOT/.git/hooks" ] && [ -f "$SCRIPT_DIR/check-thesis-impact.py" ]; then
+  HOOK_FILE="$REPO_ROOT/.git/hooks/pre-push"
+  if [ ! -f "$HOOK_FILE" ]; then
+    printf '#!/bin/sh\n' > "$HOOK_FILE"
+  fi
+  if ! grep -q '# thesis-impact-hook' "$HOOK_FILE" 2>/dev/null; then
+    cat >> "$HOOK_FILE" <<'HOOK'
+
+# thesis-impact-hook (advisory only - never blocks push)
+_TI_PY="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
+if [ -n "$_TI_PY" ] && [ -f "scripts/check-thesis-impact.py" ]; then
+  "$_TI_PY" scripts/check-thesis-impact.py || true
+fi
+HOOK
+    chmod +x "$HOOK_FILE" 2>/dev/null || true
+    echo "    Installed advisory thesis-impact pre-push hook"
+  fi
+fi
+
 # 5. Run Progressive Disclosure & cross-harness audit
 if [ -n "$PYTHON_BIN" ] && [ -f "$SCRIPT_DIR/check-ai-setup.py" ]; then
   echo "--> Running check-ai-setup.py..."

@@ -22,6 +22,7 @@ Home Assistant Ingress add-on (Alpine + Nginx + PHP 8.2 + s6-overlay, port 8099)
 - **3-copy Unity `index.html` rule**: True source is `../smart-home-visualizer/Assets/WebGLTemplates/SmartHome3D/index.html`; `unity-build/index.html` feeds dev, `sweethome3d/www/unity-visualizer/index.html` feeds Docker. Never patch only (2) or (3).
 - **Lovelace is WebSocket-only**: Never call HA REST endpoints for `lovelace/*`; always use `sweethome3d/www/lib/LovelaceWs.php`. Keep `clear_env = no` in `php82/php-fpm.conf` so `SUPERVISOR_TOKEN` is preserved.
 - **LF line endings**: All `.sh` and s6 `run`/`finish` container scripts MUST use LF (`\n`).
+- **Thesis evolution log**: After a genuine architectural evolution or core design trade-off (not routine bugfixes), append a 6-line entry to [docs/ai/thesis-evolution-log.md](docs/ai/thesis-evolution-log.md) (`scripts/check-thesis-impact.py` checks automatically on `verify`, `git push`, and PRs).
 
 ## Code Navigation (CodeGraph MCP)
 

@@ -120,11 +120,13 @@ if [ "$RUN_FULL" -eq 1 ] && [ -d "$REPO_ROOT/www-vue/node_modules" ]; then
 fi
 
 echo ""
-echo "[AI Setup Audit]"
+echo "[AI Setup Audit & Thesis Impact Advisory]"
 if command -v python3 >/dev/null 2>&1; then
   python3 "$SCRIPT_DIR/check-ai-setup.py" || ERROR_COUNT=$((ERROR_COUNT + 1))
+  [ -f "$SCRIPT_DIR/check-thesis-impact.py" ] && python3 "$SCRIPT_DIR/check-thesis-impact.py" || true
 elif command -v python >/dev/null 2>&1; then
   python "$SCRIPT_DIR/check-ai-setup.py" || ERROR_COUNT=$((ERROR_COUNT + 1))
+  [ -f "$SCRIPT_DIR/check-thesis-impact.py" ] && python "$SCRIPT_DIR/check-thesis-impact.py" || true
 fi
 
 echo ""

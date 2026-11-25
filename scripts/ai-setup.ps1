@@ -135,6 +135,27 @@ else:
     }
 }
 
+# 4b. Install advisory Git pre-push hook for thesis-impact checks (preserves existing hooks like Git LFS)
+$GitHooksDir = Join-Path $RepoRoot ".git\hooks"
+$ImpactScript = Join-Path $ScriptDir "check-thesis-impact.py"
+if ((Test-Path $GitHooksDir) -and (Test-Path $ImpactScript)) {
+    $HookFile = Join-Path $GitHooksDir "pre-push"
+    $Existing = if (Test-Path $HookFile) { Get-Content $HookFile -Raw } else { "#!/bin/sh`n" }
+    if ($Existing -notmatch "# thesis-impact-hook") {
+        $Snippet = @"
+
+# thesis-impact-hook (advisory only - never blocks push)
+_TI_PY="`$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
+if [ -n "`$_TI_PY" ] && [ -f "scripts/check-thesis-impact.py" ]; then
+  "`$_TI_PY" scripts/check-thesis-impact.py || true
+fi
+"@
+        $NewContent = ($Existing.TrimEnd("`r","`n") + "`n" + $Snippet.Replace("`r`n","`n") + "`n")
+        [IO.File]::WriteAllText($HookFile, $NewContent, (New-Object System.Text.UTF8Encoding($false)))
+        Write-Host "    Installed advisory thesis-impact pre-push hook"
+    }
+}
+
 # 5. Run Progressive Disclosure & cross-harness audit
 $AuditScript = Join-Path $ScriptDir "check-ai-setup.py"
 if ($PythonCmd -and (Test-Path $AuditScript)) {

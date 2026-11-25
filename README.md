@@ -240,7 +240,7 @@ Running `ai-setup` automatically:
 - **Subtree Rules**: [www-vue/AGENTS.md](www-vue/AGENTS.md) · [sweethome3d/AGENTS.md](sweethome3d/AGENTS.md)
 - **Cursor Glob Rules**: [.cursor/rules/vue-overlay.mdc](.cursor/rules/vue-overlay.mdc) · [.cursor/rules/php-ha-backend.mdc](.cursor/rules/php-ha-backend.mdc) · [.cursor/rules/sh3d-export.mdc](.cursor/rules/sh3d-export.mdc)
 - **MCP & Harness Configs**: [.mcp.json](.mcp.json) · [.cursor/mcp.json](.cursor/mcp.json) · [opencode.json](opencode.json) · [skills.manifest.json](skills.manifest.json)
-- **Deep References (Tier 2)**: [docs/ai/addon-practices.md](docs/ai/addon-practices.md) · [docs/ai/vue-overlay.md](docs/ai/vue-overlay.md) · [docs/ai/export-pipeline.md](docs/ai/export-pipeline.md) · [docs/ai/lovelace-ws.md](docs/ai/lovelace-ws.md) · [docs/ai/known-gotchas.md](docs/ai/known-gotchas.md) · [docs/ai/mcp-setup.md](docs/ai/mcp-setup.md)
+- **Deep References (Tier 2)**: [docs/ai/addon-practices.md](docs/ai/addon-practices.md) · [docs/ai/vue-overlay.md](docs/ai/vue-overlay.md) · [docs/ai/export-pipeline.md](docs/ai/export-pipeline.md) · [docs/ai/lovelace-ws.md](docs/ai/lovelace-ws.md) · [docs/ai/known-gotchas.md](docs/ai/known-gotchas.md) · [docs/ai/thesis-evolution-log.md](docs/ai/thesis-evolution-log.md) · [docs/ai/mcp-setup.md](docs/ai/mcp-setup.md)
 - **Recommended Side-by-Side Sibling Repos**: `../smart-home-visualizer/` (Unity 6 visualizer) · `../smart-home-thesis-intro/` (thesis & papers)
 
 ## Support

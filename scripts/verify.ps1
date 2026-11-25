@@ -100,12 +100,14 @@ if (-not $SkipTypeCheck -and (Test-Path (Join-Path $RepoRoot "www-vue\node_modul
     } finally { Pop-Location }
 }
 
-Write-Host "`n[AI Setup Audit]"
+Write-Host "`n[AI Setup Audit & Thesis Impact Advisory]"
 $py = Get-Command python -ErrorAction SilentlyContinue
 if (-not $py) { $py = Get-Command python3 -ErrorAction SilentlyContinue }
 if ($py) {
     & $py.Source (Join-Path $ScriptDir "check-ai-setup.py")
     if ($LASTEXITCODE -ne 0) { $ErrorCount++ }
+    $impact = Join-Path $ScriptDir "check-thesis-impact.py"
+    if (Test-Path $impact) { & $py.Source $impact }
 }
 
 Write-Host ""
