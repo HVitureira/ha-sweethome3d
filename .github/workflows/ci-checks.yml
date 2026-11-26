@@ -19,16 +19,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: "npm"
-          cache-dependency-path: www-vue/package-lock.json
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install Vue dependencies
+      - name: Install Vue dependencies (Linux optional deps safe across Win/macOS lockfiles)
         working-directory: www-vue
-        run: npm ci
+        run: rm -f package-lock.json && npm install --no-audit --no-fund
 
       - name: Vue TypeScript type-check
         working-directory: www-vue
