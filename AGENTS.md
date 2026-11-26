@@ -8,7 +8,7 @@ Home Assistant Ingress add-on (Alpine + Nginx + PHP 8.2 + s6-overlay, port 8099)
 | :--- | :--- | :--- |
 | AI & CodeGraph bootstrap | `./scripts/ai-setup.sh` | `.\scripts\ai-setup.ps1` |
 | Dev server (no Docker needed) | `cd www-vue && npm run dev` | `cd www-vue; npm run dev` |
-| Vue type-check & build | `cd www-vue && npm run type-check && npm run build` | `cd www-vue; npm run type-check; npm run build` |
+| Vue type-check, tests & build | `cd www-vue && npm run type-check && npm test && npm run build` | `cd www-vue; npm run type-check; npm test; npm run build` |
 | Verify addon & assets | `./scripts/verify.sh` | `.\scripts\verify.ps1` |
 | Audit AI setup & budgets | `python3 scripts/check-ai-setup.py` | `python scripts/check-ai-setup.py` |
 | Package for Docker / release | `./scripts/setup.sh` | `.\scripts\deploy-local.ps1` |

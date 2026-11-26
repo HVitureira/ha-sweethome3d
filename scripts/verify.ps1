@@ -92,10 +92,12 @@ foreach ($f in $containerScripts) {
 if ($crlfCount -eq 0) { Write-Host "  OK: All container scripts use LF endings" }
 
 if (-not $SkipTypeCheck -and (Test-Path (Join-Path $RepoRoot "www-vue\node_modules"))) {
-    Write-Host "`n[Vue Type-Check]"
+    Write-Host "`n[Vue Type-Check & Contract Tests]"
     Push-Location (Join-Path $RepoRoot "www-vue")
     try {
         npm run type-check
+        if ($LASTEXITCODE -ne 0) { $ErrorCount++ }
+        npm test
         if ($LASTEXITCODE -ne 0) { $ErrorCount++ }
     } finally { Pop-Location }
 }

@@ -115,8 +115,8 @@ fi
 
 if [ "$RUN_FULL" -eq 1 ] && [ -d "$REPO_ROOT/www-vue/node_modules" ]; then
   echo ""
-  echo "[Vue Type-Check]"
-  (cd "$REPO_ROOT/www-vue" && npm run type-check) || ERROR_COUNT=$((ERROR_COUNT + 1))
+  echo "[Vue Type-Check & Contract Tests]"
+  (cd "$REPO_ROOT/www-vue" && npm run type-check && npm test) || ERROR_COUNT=$((ERROR_COUNT + 1))
 fi
 
 echo ""

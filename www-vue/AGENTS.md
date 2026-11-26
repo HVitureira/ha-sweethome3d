@@ -6,6 +6,7 @@ Vue 3.5 + TypeScript 5.9 (`strict`) + Pinia + Vue Router 4 (hash history) + Vite
 
 - `npm run dev` — Vite dev server with `sh3d-dev-backend` middleware (emulates PHP via `../test-data/`, serves `/unity-visualizer/` from `../unity-build/` — **no Docker needed**).
 - `npm run type-check` — `vue-tsc --noEmit` (run before every commit).
+- `npm test` — Vitest contract unit tests (`tests/` covering `deviceDetection`, `settingsStore.toUnityConfig()`, and `unity-export-utils.js`).
 - `npm run build` — `vue-tsc && vite build` (`copyPublicDir: false`).
 
 ## Critical Overlay Invariants
