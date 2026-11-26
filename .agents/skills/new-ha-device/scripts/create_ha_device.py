@@ -395,8 +395,9 @@ def parse_args():
                    help="If set, patches unity-export-utils.js getDeviceType()")
     p.add_argument("--particle-color", default="",
                    help="RGBA 0-1 as R,G,B,A for getParticleSettings() (requires --device-type)")
-    p.add_argument("--project-root", required=True,
-                   help="Path to SweetHome3DJS-7.5.2 root")
+    p.add_argument("--project-root", default=None,
+                   help="Path to ha-sweethome3d repo root (auto-detected if omitted; "
+                        "also accepts legacy parent folder containing ha-sweethome3d/)")
     # External OBJ mode (Meshy.ai / downloaded models)
     p.add_argument("--external-obj", default=None, metavar="FOLDER",
                    help="Path to a folder containing *.obj [+ *.mtl + *.png] from Meshy.ai "
@@ -436,13 +437,27 @@ def main():
             sys.exit(1)
         r, g, b = color_parts
 
-    project_root = os.path.abspath(args.project_root)
+    # Resolve ha-sweethome3d repo root (works standalone or from legacy parent folder)
+    if args.project_root:
+        project_root = os.path.abspath(args.project_root)
+    else:
+        # Script lives at <repo>/.agents/skills/new-ha-device/scripts/create_ha_device.py
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+
     if not os.path.isdir(project_root):
         print(f"ERROR: --project-root does not exist: {project_root}", file=sys.stderr)
         sys.exit(1)
 
-    # Resolve paths within the project
-    ha_root    = os.path.join(project_root, "ha-sweethome3d", "sweethome3d", "www", "lib")
+    direct_lib = os.path.join(project_root, "sweethome3d", "www", "lib")
+    legacy_lib = os.path.join(project_root, "ha-sweethome3d", "sweethome3d", "www", "lib")
+    if os.path.isdir(direct_lib):
+        ha_root = direct_lib
+    elif os.path.isdir(legacy_lib):
+        ha_root = legacy_lib
+    else:
+        print(f"ERROR: Could not find sweethome3d/www/lib under: {project_root}", file=sys.stderr)
+        sys.exit(1)
+
     models_dir = os.path.join(ha_root, "resources", "models")
     catalog_path = os.path.join(ha_root, "resources", "DefaultFurnitureCatalog.json")
     unity_js_path = os.path.join(ha_root, "unity-export-utils.js")
@@ -502,7 +517,7 @@ def main():
 
     # ---- Step 5: Find next free catalog index ----------------------------
     print(f"[5/7] Reading catalog to find next index...")
-    with open(catalog_path, "r", encoding="utf-8") as f:
+    with open(catalog_path, "r", encoding="utf-8-sig") as f:
         catalog = json.load(f)
     next_n = find_next_index(catalog)
     print(f"       -> Next index: #{next_n}")

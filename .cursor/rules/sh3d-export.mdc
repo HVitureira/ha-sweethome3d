@@ -1,0 +1,15 @@
+---
+description: SweetHome3D JS export pipeline and coordinate contract guardrails
+globs:
+  - "sweethome3d/www/lib/**/*.js"
+alwaysApply: false
+---
+
+# SweetHome3D Export JS Guardrails
+
+- This app is a non-invasive fork of SweetHome3D JS (`7.5.2`). NEVER modify minified core libraries (`sweethome3d.min.js`, `gl-matrix-min.js`, `jszip.min.js`, `graphics2d.min.js`, `geom.min.js`).
+- `sweethome3d.min.js` is ~2.5 MB compressed/minified: never read or raw-grep it directly into context. If you must inspect internal SH3D APIs/patterns, pretty-print it to `/tmp/sh3d-pretty.js` (or `$env:TEMP\sh3d-pretty.js`), search bounded slices only, and document discovered globals in `www-vue/src/types/sweethome3d.d.ts`.
+- Coordinate units: SH3D internal = `cm`; `{homeId}_devices.json` = `m` (SH3D Y -> Unity Z); OBJ geometry = `cm` (Unity scales by `0.01`).
+- Keep `extractDeviceMetadata()` output in `unity-export-utils.js` aligned with `SmartHomeExportData.cs` in sibling `../smart-home-visualizer/`.
+- Smart devices are identified by `ha_` catalogId prefix, `creator === 'HA'`, or Smart category; catalog entries require all 14 numbered keys (`#N`) with exact `modelSize#N` ZIP byte count.
+- Read `docs/ai/addon-practices.md` and `docs/ai/export-pipeline.md` before changing export schemas.

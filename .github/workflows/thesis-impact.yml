@@ -1,0 +1,60 @@
+name: Thesis Evolution Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [master, main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  thesis-impact:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect thesis-relevant architectural changes
+        id: check
+        run: |
+          python3 scripts/check-thesis-impact.py \
+            --range "origin/${{ github.base_ref }}..HEAD" \
+            --markdown > /tmp/thesis-impact.md
+          if [ -s /tmp/thesis-impact.md ]; then
+            echo "has_impact=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_impact=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Post or update PR advisory comment
+        if: steps.check.outputs.has_impact == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('/tmp/thesis-impact.md', 'utf8');
+            const marker = '<!-- thesis-impact-bot -->';
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

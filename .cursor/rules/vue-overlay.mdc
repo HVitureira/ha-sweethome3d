@@ -1,0 +1,15 @@
+---
+description: Vue 3.5 + TypeScript + Pinia overlay guardrails for ha-sweethome3d www-vue
+globs:
+  - "www-vue/**/*.{vue,ts,html}"
+alwaysApply: false
+---
+
+# Vue 3 Overlay Guardrails (`www-vue/`)
+
+- Use Vue 3 Composition API (`<script setup lang="ts">`), Pinia setup stores, and `<style scoped>` (no Options API, no inline styles).
+- Never hide `#home-pane` with `display: none` (breaks SH3D splitters); use `visibility: hidden; position: absolute; pointer-events: none` and dispatch `resize` on show.
+- Keep `UnityView.vue` permanently mounted via `v-show` in `App.vue` (never `<KeepAlive>`).
+- Guard dialog MutationObserver with `el.closest('.dialog-template') === null` and inject HA fields via `<Teleport>`.
+- Keep `settingsStore.toUnityConfig()` flat to match C# `ConfigurationData` in `smart-home-visualizer`.
+- Run `npm run type-check` (`vue-tsc --noEmit`) after edits. Read `docs/ai/vue-overlay.md` for details.

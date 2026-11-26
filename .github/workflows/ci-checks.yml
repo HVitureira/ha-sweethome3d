@@ -1,0 +1,45 @@
+name: CI Checks (Vue, Contract Tests, PHP Lint, AI Audit)
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Type-check, Contract Tests, PHP Syntax & AI Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Vue dependencies (Linux optional deps safe across Win/macOS lockfiles)
+        working-directory: www-vue
+        run: rm -f package-lock.json && npm install --no-audit --no-fund
+
+      - name: Vue TypeScript type-check
+        working-directory: www-vue
+        run: npm run type-check
+
+      - name: Run Vitest contract unit tests
+        working-directory: www-vue
+        run: npm test
+
+      - name: PHP syntax lint (php -l)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq php-cli
+          find sweethome3d/www -name "*.php" -print0 | xargs -0 -n1 php -l
+
+      - name: Audit AI setup, Progressive Disclosure budgets & LF endings
+        run: python3 scripts/check-ai-setup.py
