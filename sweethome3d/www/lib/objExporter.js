@@ -25,6 +25,7 @@ class OBJExporter {
     this.texCoordIndex = 1;
     this.precision = 7; // Decimal places for coordinates
     this.textureHashes = new Map(); // hash -> textureName for O(1) deduplication
+    this._zipCache = new Map(); // modelURL -> Promise<JSZip> for per-export deduplication
 
     // Initialize default materials if available
     this.defaultMaterials = new Map();
@@ -44,65 +45,80 @@ class OBJExporter {
    * @param {Home} home - The SweetHome3D home object
    * @param {HomeComponent3D} component3D - The 3D component with rendered scene
    * @param {string} filename - Output filename (will be .zip)
+   * @param {Object} [options] - Export options ({ download: true })
    */
-  async exportToOBJ(home, component3D, filename = 'home.zip') {
+  async exportToOBJ(home, component3D, filename = 'home.zip', options = {}) {
     // Uncomment for debugging export initialization
     // console.log('🚀 Starting OBJ export...');
     // console.log('Home:', home);
     // console.log('Component3D:', component3D);
     // console.log('Filename:', filename);
-    
+
     // Check if JSZip is available
     if (typeof JSZip === 'undefined') {
       throw new Error('JSZip library not loaded. Please include jszip.min.js');
     }
-    
+
     // Validate home object
     if (!home) {
       throw new Error('Home object is null or undefined');
     }
 
+    const safeFilename = (typeof filename === 'string' && filename.trim()) ? filename.trim() : 'home.zip';
+    const finalFilename = safeFilename.endsWith('.zip') ? safeFilename : safeFilename + '.zip';
+    const shouldDownload = options.download !== false;
+
     this.reset();
-    
+
     try {
       // Export header
       const objHeader = this.generateHeader(home);
-      
+
       // Reference to MTL file
       const mtlFileName = 'materials.mtl';
       let objContent = objHeader;
       objContent += `mtllib ${mtlFileName}\n\n`;
-      
+
       // Export geometry from home
       await this.exportHome(home, component3D);
-      
+
       // Build OBJ file content
       objContent += this.buildOBJContent();
-      
+
       // Build MTL file content
       const mtlContent = this.buildMTLContent();
-      
+
       // Create ZIP file with OBJ, MTL, and textures
       const zipBlob = await this.createZipFile(
-        filename.replace('.zip', ''),
+        finalFilename.replace(/\.zip$/i, ''),
         objContent,
         mtlContent
       );
-      
-      // Trigger download
-      this.downloadBlob(zipBlob, filename.endsWith('.zip') ? filename : filename + '.zip');
-      
+
+      // Trigger browser download unless caller handles the Blob directly
+      if (shouldDownload) {
+        this.downloadBlob(zipBlob, finalFilename);
+      }
+
       const result = {
         success: true,
         vertices: this.vertices.length,
         faces: this.faces.length,
         materials: this.materials.size,
-        textures: this.textures.size
+        textures: this.textures.size,
+        blob: zipBlob,
+        filename: finalFilename
       };
 
-      console.log('✅ OBJ Export completed:', result);
+      console.log('✅ OBJ Export completed:', {
+        vertices: result.vertices,
+        faces: result.faces,
+        materials: result.materials,
+        textures: result.textures,
+        filename: result.filename
+      });
       return result;
-      
+
     } catch (error) {
       console.error('❌ OBJ Export error:', error);
       console.error('Stack trace:', error.stack);
@@ -126,27 +142,55 @@ class OBJExporter {
   }
 
   /**
+   * Safely coerce a numeric value with fallback (handles null, undefined, NaN)
+   */
+  _num(value, fallback) {
+    return (typeof value === 'number' && !isNaN(value)) ? value : fallback;
+  }
+
+  /**
+   * Recursively flatten HomeFurnitureGroup items so child models export properly
+   */
+  _collectFurniturePieces(furnitureList, out = []) {
+    if (!furnitureList) return out;
+    for (let i = 0; i < furnitureList.length; i++) {
+      const piece = furnitureList[i];
+      if (!piece) continue;
+      if (typeof piece.getFurniture === 'function') {
+        const children = piece.getFurniture();
+        if (children && children.length > 0) {
+          this._collectFurniturePieces(children, out);
+          continue;
+        }
+      }
+      out.push(piece);
+    }
+    return out;
+  }
+
+  /**
    * Export all elements from home
    */
   async exportHome(home, component3D) {
     // Uncomment for detailed debugging of home element counts
     // console.log('📦 Exporting home elements...');
     // console.log('Home object:', home);
-    
+
     let wallCount = 0, roomCount = 0, furnitureCount = 0;
-    
+    const defaultWallHeight = this._num(home.getWallHeight ? home.getWallHeight() : null, 250);
+
     // Export walls
     if (home.getWalls) {
       const walls = home.getWalls();
       // Uncomment to debug wall count: console.log('Found walls:', walls ? walls.length : 0);
       if (walls && walls.length > 0) {
         for (let i = 0; i < walls.length; i++) {
-          await this.exportWall(walls[i], `wall_${i}`);
+          await this.exportWall(walls[i], `wall_${i}`, defaultWallHeight);
           wallCount++;
         }
       }
     }
-    
+
     // Export rooms (floors and ceilings)
     if (home.getRooms) {
       const rooms = home.getRooms();
@@ -158,11 +202,12 @@ class OBJExporter {
         }
       }
     }
-    
+
     // Export furniture — parallel fetch, sequential integrate
     if (home.getFurniture) {
-      const furniture = home.getFurniture();
-      if (furniture && furniture.length > 0) {
+      const rawFurniture = home.getFurniture();
+      const furniture = this._collectFurniturePieces(rawFurniture);
+      if (furniture.length > 0) {
         // Phase 1: Resolve model URLs and prepare metadata (synchronous)
         const furnitureItems = [];
         for (let i = 0; i < furniture.length; i++) {
@@ -179,7 +224,7 @@ class OBJExporter {
             batchPromises.push(
               this.prefetchFurnitureModel(furnitureItems[i].piece, furnitureItems[i].name)
                 .then(data => { prefetched[i] = data; })
-                .catch(() => { prefetched[i] = null; })
+                .catch(() => { prefetched[i] = { useBoundingBox: true }; })
             );
           }
           await Promise.all(batchPromises);
@@ -190,24 +235,24 @@ class OBJExporter {
           const data = prefetched[i];
           if (data && data.objContent) {
             const { piece } = furnitureItems[i];
-            const pX = piece.getX ? piece.getX() : 0;
-            const pY = piece.getY ? piece.getY() : 0;
-            const elev = piece.getElevation ? piece.getElevation() : 0;
-            const ang = piece.getAngle ? piece.getAngle() : 0;
-            this.addComment(`Furniture: ${furnitureItems[i].name} - ${piece.getName ? piece.getName() : 'Unknown'}`);
+            const pX = this._num(piece.getX ? piece.getX() : null, 0);
+            const pY = this._num(piece.getY ? piece.getY() : null, 0);
+            const elev = this._num(piece.getElevation ? piece.getElevation() : null, 0);
+            const ang = this._num(piece.getAngle ? piece.getAngle() : null, 0);
+            this.addComment(`Furniture: ${furnitureItems[i].name} - ${(piece.getName ? piece.getName() : null) || 'Unknown'}`);
             await this.integrateOBJContent(data.objContent, pX, pY, elev, ang, furnitureItems[i].name, piece, data.materialTextureMap);
           } else if (data && data.useBoundingBox) {
-            this.addComment(`Furniture: ${furnitureItems[i].name} - ${furnitureItems[i].piece.getName ? furnitureItems[i].piece.getName() : 'Unknown'}`);
+            this.addComment(`Furniture: ${furnitureItems[i].name} - ${(furnitureItems[i].piece.getName ? furnitureItems[i].piece.getName() : null) || 'Unknown'}`);
             this.exportFurnitureBoundingBox(furnitureItems[i].piece, furnitureItems[i].name);
           }
           furnitureCount++;
         }
       }
     }
-    
+
     // Uncomment for export summary: console.log(`📊 Export summary: ${wallCount} walls, ${roomCount} rooms, ${furnitureCount} furniture items`);
     // Uncomment to see geometry stats: console.log(`📊 Generated: ${this.vertices.length} vertices, ${this.faces.length} faces`);
-    
+
     // If nothing was exported, throw an error
     if (this.vertices.length === 0) {
       const totalItems = wallCount + roomCount + furnitureCount;
@@ -222,27 +267,27 @@ class OBJExporter {
   /**
    * Export a wall to OBJ format
    */
-  async exportWall(wall, name) {
+  async exportWall(wall, name, defaultWallHeight = 250) {
     if (!wall) {
       return;
     }
-    
-    const xStart = wall.getXStart ? wall.getXStart() : 0;
-    const yStart = wall.getYStart ? wall.getYStart() : 0;
-    const xEnd = wall.getXEnd ? wall.getXEnd() : 0;
-    const yEnd = wall.getYEnd ? wall.getYEnd() : 0;
-    const height = wall.getHeight ? wall.getHeight() : 250;
-    const thickness = wall.getThickness ? wall.getThickness() : 10;
-    
+
+    const xStart = this._num(wall.getXStart ? wall.getXStart() : null, 0);
+    const yStart = this._num(wall.getYStart ? wall.getYStart() : null, 0);
+    const xEnd = this._num(wall.getXEnd ? wall.getXEnd() : null, 0);
+    const yEnd = this._num(wall.getYEnd ? wall.getYEnd() : null, 0);
+    const height = this._num(wall.getHeight ? wall.getHeight() : null, defaultWallHeight);
+    const thickness = this._num(wall.getThickness ? wall.getThickness() : null, 10);
+
     // Skip if wall has no length
-    if (xStart === xEnd && yStart === yEnd) {
-      return;
-    }
-    
-    // Calculate wall direction
     const dx = xEnd - xStart;
     const dy = yEnd - yStart;
     const length = Math.sqrt(dx * dx + dy * dy);
+    if (length < 1e-6) {
+      return;
+    }
+
+    // Calculate wall direction
     const nx = -dy / length; // Normal perpendicular to wall
     const ny = dx / length;
     
@@ -364,6 +409,151 @@ class OBJExporter {
   }
 
   /**
+   * Resolve a furniture piece's model URL to a fetchable ZIP URL.
+   * Re-bases stale saved origins (e.g. jar:http://localhost:8099/lib/resources/models/...)
+   * to relative paths so exports work across ports and HA Ingress.
+   */
+  _resolveModelURL(piece) {
+    if (!piece) return null;
+
+    const catalogId = (piece.getCatalogId ? piece.getCatalogId() : null)
+      || (piece.getProperty ? piece.getProperty('catalogId') : null);
+    const model = piece.getModel ? piece.getModel() : null;
+
+    let modelURL = null;
+    if (model && model.getURL) {
+      modelURL = model.getURL();
+    }
+    if (!modelURL && catalogId) {
+      modelURL = `lib/resources/models/${catalogId}.zip`;
+    }
+    if (!modelURL || typeof modelURL !== 'string') return null;
+
+    if (modelURL.startsWith('jar:')) {
+      const bangIdx = modelURL.indexOf('!/');
+      if (bangIdx !== -1) {
+        const zipPart = modelURL.substring(4, bangIdx);
+        const innerPart = modelURL.substring(bangIdx + 2);
+
+        const modelsMatch = zipPart.match(/(?:^|\/)(lib\/resources\/models\/.+)$/i);
+        if (modelsMatch) return modelsMatch[1];
+
+        const dataMatch = zipPart.match(/(?:^|\/)(data\/.+)$/i);
+        if (dataMatch) return dataMatch[1];
+
+        if (
+          zipPart.startsWith('indexeddb://') ||
+          zipPart.startsWith('localstorage://') ||
+          zipPart.startsWith('blob:') ||
+          /\.zip$/i.test(zipPart)
+        ) {
+          return zipPart;
+        }
+
+        const fileNameMatch = innerPart.match(/([^/\\]+)\.obj$/i);
+        if (fileNameMatch) return `lib/resources/models/${fileNameMatch[1]}.zip`;
+        return innerPart.startsWith('lib/') ? innerPart : `lib/${innerPart}`;
+      }
+    }
+
+    // Rebase stale absolute URLs pointing to catalog models or saved data resources
+    const absModelsMatch = modelURL.match(/^https?:\/\/[^/]+\/(lib\/resources\/models\/.+)$/i);
+    if (absModelsMatch) return absModelsMatch[1];
+
+    const absDataMatch = modelURL.match(/^https?:\/\/[^/]+\/(data\/.+)$/i);
+    if (absDataMatch) return absDataMatch[1];
+
+    if (modelURL.endsWith('.obj')) {
+      const fileNameMatch = modelURL.match(/([^/\\]+)\.obj$/i);
+      if (fileNameMatch) return `lib/resources/models/${fileNameMatch[1]}.zip`;
+    }
+
+    return modelURL;
+  }
+
+  /**
+   * Resolve indexeddb:// or localstorage:// SH3D URLs via URLContent.getStreamURL with a timeout.
+   * Leaves HTTP(S), relative, and blob: URLs untouched.
+   */
+  async _resolveStreamURL(url, timeoutMs = 15000) {
+    if (
+      typeof url === 'string' &&
+      (url.startsWith('indexeddb://') || url.startsWith('localstorage://')) &&
+      typeof URLContent !== 'undefined' &&
+      typeof URLContent.fromURL === 'function'
+    ) {
+      return await new Promise((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            reject(new Error(`Timed out resolving stream URL: ${url}`));
+          }
+        }, timeoutMs);
+
+        try {
+          const content = URLContent.fromURL(url);
+          content.getStreamURL({
+            urlReady: (streamUrl) => {
+              if (!settled) {
+                settled = true;
+                clearTimeout(timer);
+                resolve(streamUrl);
+              }
+            },
+            urlError: (_err, msg) => {
+              if (!settled) {
+                settled = true;
+                clearTimeout(timer);
+                reject(new Error(msg || `Failed to resolve stream URL: ${url}`));
+              }
+            }
+          });
+        } catch (err) {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            reject(err);
+          }
+        }
+      });
+    }
+    return url;
+  }
+
+  /**
+   * Fetch and parse a model ZIP with per-export deduplication and timeout.
+   * Replaces ZIPTools.getZIP to prevent silent Promise hangs on concurrent/aborted XHRs.
+   */
+  async _loadModelZip(modelURL, timeoutMs = 20000) {
+    if (this._zipCache.has(modelURL)) {
+      return this._zipCache.get(modelURL);
+    }
+
+    const loadPromise = (async () => {
+      const streamURL = await this._resolveStreamURL(modelURL, timeoutMs);
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+
+      try {
+        const fetchOptions = { credentials: 'same-origin' };
+        if (controller) fetchOptions.signal = controller.signal;
+        const response = await fetch(streamURL, fetchOptions);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status} while requesting ${modelURL}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        return new JSZip(arrayBuffer);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    })();
+
+    this._zipCache.set(modelURL, loadPromise);
+    return loadPromise;
+  }
+
+  /**
    * Export furniture piece
    */
   async exportFurniture(piece, name, component3D) {
@@ -371,76 +561,30 @@ class OBJExporter {
       console.warn('⚠️ Furniture piece is null or undefined');
       return;
     }
-    
-    const x = piece.getX ? piece.getX() : 0;
-    const y = piece.getY ? piece.getY() : 0;
-    const elevation = piece.getElevation ? piece.getElevation() : 0;
-    const angle = piece.getAngle ? piece.getAngle() : 0;
-    
-    const pieceName = piece.getName ? piece.getName() : 'Unnamed';
-    const catalogId = piece.getCatalogId ? piece.getCatalogId() : null;
-    
-    // Uncomment for detailed furniture debugging
-    // console.log(`  📦 Exporting furniture: ${name} (${pieceName})`);
-    // console.log(`    Catalog ID: ${catalogId}`);
-    
+
+    const x = this._num(piece.getX ? piece.getX() : null, 0);
+    const y = this._num(piece.getY ? piece.getY() : null, 0);
+    const elevation = this._num(piece.getElevation ? piece.getElevation() : null, 0);
+    const angle = this._num(piece.getAngle ? piece.getAngle() : null, 0);
+
+    const pieceName = (piece.getName ? piece.getName() : null) || 'Unnamed';
+
     this.addComment(`Furniture: ${name} - ${pieceName}`);
-    
-    // Try to get model URL/path from piece
-    const model = piece.getModel ? piece.getModel() : null;
-    
-    // Check if we can get the model URL
-    let modelURL = null;
-    if (model && model.getURL) {
-      modelURL = model.getURL();
-    }
-    
-    // If no model URL, try to construct from catalog ID
-    if (!modelURL && catalogId) {
-      // Try to construct model path from catalog ID
-      // Usually in format: lib/resources/models/modelname.zip
-      modelURL = `lib/resources/models/${catalogId}.zip`;
-    }
-    
+
+    const modelURL = this._resolveModelURL(piece);
+
     // Try to load and export actual model
     if (modelURL) {
       try {
-        // Handle JAR URLs (jar:file:...!/...) or plain OBJ references
-        if (modelURL.startsWith('jar:')) {
-          const jarMatch = modelURL.match(/jar:[^!]+!\/(.+)/);
-          if (jarMatch) {
-            const innerPath = jarMatch[1];
-            // The inner path is like "chest.obj" but we need "lib/resources/models/chest.zip"
-            const fileNameMatch = innerPath.match(/([^\/]+)\.obj$/i);
-            if (fileNameMatch) {
-              const baseName = fileNameMatch[1];
-              modelURL = `lib/resources/models/${baseName}.zip`;
-            } else {
-              modelURL = innerPath.startsWith('lib/') ? innerPath : `lib/${innerPath}`;
-            }
-          }
-        } else if (modelURL.endsWith('.obj')) {
-          // If it's just a .obj file, convert to .zip
-          const fileNameMatch = modelURL.match(/([^\/]+)\.obj$/i);
-          if (fileNameMatch) {
-            const baseName = fileNameMatch[1];
-            modelURL = `lib/resources/models/${baseName}.zip`;
-          }
-        }
-        
         await this.exportModelFromURL(modelURL, x, y, elevation, angle, name, piece);
-        // Uncomment to track 3D model exports: console.log(`    ✅ Exported 3D model: ${pieceName}`);
         return;
       } catch (error) {
-        // Only log errors in production for serious issues
         console.error(`Failed to load model for ${pieceName}:`, error.message);
-        // Uncomment for detailed error debugging: console.error('Full error:', error);
       }
     }
-    
+
     // Fallback: Use bounding box representation
     this.exportFurnitureBoundingBox(piece, name);
-    // Uncomment to track bounding box fallbacks: console.log(`    ℹ️ Exported as bounding box: ${pieceName}`);
   }
 
   /**
@@ -451,32 +595,13 @@ class OBJExporter {
   async prefetchFurnitureModel(piece, name) {
     if (!piece) return null;
 
-    const catalogId = piece.getCatalogId ? piece.getCatalogId() : null;
-    const model = piece.getModel ? piece.getModel() : null;
-
-    let modelURL = null;
-    if (model && model.getURL) modelURL = model.getURL();
-    if (!modelURL && catalogId) modelURL = `lib/resources/models/${catalogId}.zip`;
-
+    const modelURL = this._resolveModelURL(piece);
     if (!modelURL) return { useBoundingBox: true };
-
-    // Resolve JAR / OBJ URLs to ZIP paths
-    if (modelURL.startsWith('jar:')) {
-      const jarMatch = modelURL.match(/jar:[^!]+!\/(.+)/);
-      if (jarMatch) {
-        const fileNameMatch = jarMatch[1].match(/([^\/]+)\.obj$/i);
-        if (fileNameMatch) modelURL = `lib/resources/models/${fileNameMatch[1]}.zip`;
-        else modelURL = jarMatch[1].startsWith('lib/') ? jarMatch[1] : `lib/${jarMatch[1]}`;
-      }
-    } else if (modelURL.endsWith('.obj')) {
-      const fileNameMatch = modelURL.match(/([^\/]+)\.obj$/i);
-      if (fileNameMatch) modelURL = `lib/resources/models/${fileNameMatch[1]}.zip`;
-    }
 
     try {
       return await this._fetchAndParseModelZip(modelURL, name);
     } catch (error) {
-      console.error(`Failed to prefetch model for ${piece.getName ? piece.getName() : name}:`, error.message);
+      console.error(`Failed to prefetch model for ${(piece.getName ? piece.getName() : null) || name}:`, error.message);
       return { useBoundingBox: true };
     }
   }
@@ -487,152 +612,63 @@ class OBJExporter {
    * it only appends to this.textures Map with unique keys).
    */
   async _fetchAndParseModelZip(modelURL, name) {
-    return new Promise((resolve, reject) => {
-      ZIPTools.getZIP(modelURL, false, {
-        zipReady: async (zip) => {
-          try {
-            let objFile = null, objFileName = null, mtlFile = null;
-            const textureFiles = [];
+    const zip = await this._loadModelZip(modelURL);
 
-            const files = zip.file(/.*/);
-            for (let i = 0; i < files.length; i++) {
-              const fileName = files[i].name.toLowerCase();
-              if (fileName.endsWith('.obj')) { objFile = files[i]; objFileName = files[i].name; }
-              else if (fileName.endsWith('.mtl')) { mtlFile = files[i]; }
-              else if (fileName.match(/\.(jpg|jpeg|png|bmp|gif)$/)) { textureFiles.push(files[i]); }
-            }
+    let objFile = null, objFileName = null, mtlFile = null;
+    const textureFiles = [];
 
-            if (!objFile) { reject(new Error('No OBJ file found in model ZIP')); return; }
+    const files = zip.file(/.*/);
+    for (let i = 0; i < files.length; i++) {
+      const fileName = files[i].name.toLowerCase();
+      if (fileName.endsWith('.obj')) { objFile = files[i]; objFileName = files[i].name; }
+      else if (fileName.endsWith('.mtl')) { mtlFile = files[i]; }
+      else if (fileName.match(/\.(jpg|jpeg|png|bmp|gif)$/)) { textureFiles.push(files[i]); }
+    }
 
-            // Find matching MTL
-            const expectedMtlName = objFileName.replace(/\.obj$/i, '.mtl');
-            let selectedMtlFile = mtlFile;
-            for (let i = 0; i < files.length; i++) {
-              if (files[i].name.toLowerCase().endsWith(expectedMtlName.toLowerCase()) ||
-                  files[i].name.toLowerCase() === expectedMtlName.toLowerCase()) {
-                selectedMtlFile = files[i]; break;
-              }
-            }
+    if (!objFile) {
+      throw new Error('No OBJ file found in model ZIP');
+    }
 
-            // Extract textures (addTexture uses hash dedup, safe for concurrent calls)
-            const textureMap = new Map();
-            for (const texFile of textureFiles) {
-              try {
-                const texData = texFile.asUint8Array().buffer;
-                const texBaseName = `furniture_${name}_${texFile.name.split('.')[0]}`;
-                const texName = await this.addTexture(texBaseName, texFile.name, texData);
-                this.registerTextureMapKeys(textureMap, texFile.name, texName);
-              } catch (e) { console.warn(`Failed to extract texture ${texFile.name}:`, e.message); }
-            }
+    // Find matching MTL
+    const expectedMtlName = objFileName.replace(/\.obj$/i, '.mtl');
+    let selectedMtlFile = mtlFile;
+    for (let i = 0; i < files.length; i++) {
+      if (files[i].name.toLowerCase().endsWith(expectedMtlName.toLowerCase()) ||
+          files[i].name.toLowerCase() === expectedMtlName.toLowerCase()) {
+        selectedMtlFile = files[i];
+        break;
+      }
+    }
 
-            // Parse MTL
-            let materialTextureMap = new Map();
-            if (selectedMtlFile) {
-              materialTextureMap = this.parseMTLTextures(selectedMtlFile.asText(), textureMap);
-            }
+    // Extract textures (slice view to exact byte range; addTexture deduplicates by hash)
+    const textureMap = new Map();
+    for (const texFile of textureFiles) {
+      try {
+        const rawBytes = texFile.asUint8Array();
+        const texData = rawBytes.buffer.slice(rawBytes.byteOffset, rawBytes.byteOffset + rawBytes.byteLength);
+        const texBaseName = `furniture_${name}_${texFile.name.split('.')[0]}`;
+        const texName = await this.addTexture(texBaseName, texFile.name, texData);
+        this.registerTextureMapKeys(textureMap, texFile.name, texName);
+      } catch (e) {
+        console.warn(`Failed to extract texture ${texFile.name}:`, e.message);
+      }
+    }
 
-            resolve({ objContent: objFile.asText(), materialTextureMap });
-          } catch (error) { reject(error); }
-        },
-        zipError: (error) => { reject(new Error(`Failed to load ZIP: ${error}`)); }
-      });
-    });
+    // Parse MTL
+    let materialTextureMap = new Map();
+    if (selectedMtlFile) {
+      materialTextureMap = this.parseMTLTextures(selectedMtlFile.asText(), textureMap);
+    }
+
+    return { objContent: objFile.asText(), materialTextureMap };
   }
 
   /**
    * Load and export 3D model from URL (ZIP file containing OBJ)
    */
   async exportModelFromURL(modelURL, x, y, elevation, angle, name, piece) {
-    // Uncomment to debug model loading: console.log(`    📥 Loading model from: ${modelURL}`);
-
-    return new Promise((resolve, reject) => {
-      // Use SweetHome3D's ZIPTools to load the ZIP file (same as ModelLoader)
-      ZIPTools.getZIP(modelURL, false, {
-        zipReady: async (zip) => {
-          try {
-            // Find OBJ, MTL, and texture files in the ZIP
-            let objFile = null;
-            let objFileName = null;
-            let mtlFile = null;
-            const textureFiles = [];
-
-            const files = zip.file(/.*/);
-            for (let i = 0; i < files.length; i++) {
-              const file = files[i];
-              const fileName = file.name.toLowerCase();
-
-              if (fileName.endsWith('.obj')) {
-                objFile = file;
-                objFileName = file.name;
-              } else if (fileName.endsWith('.mtl')) {
-                mtlFile = file;
-              } else if (fileName.match(/\.(jpg|jpeg|png|bmp|gif)$/)) {
-                textureFiles.push(file);
-              }
-            }
-
-            if (!objFile) {
-              reject(new Error('No OBJ file found in model ZIP'));
-              return;
-            }
-
-            // Prefer MTL file validation (look for one matching the OBJ name)
-            const expectedMtlName = objFileName.replace(/\.obj$/i, '.mtl');
-            let selectedMtlFile = mtlFile; // Default to last found
-            
-            // Try to find exact match
-            const files2 = zip.file(/.*/);
-            for (let i = 0; i < files2.length; i++) {
-               if (files2[i].name.toLowerCase().endsWith(expectedMtlName.toLowerCase()) || 
-                   files2[i].name.toLowerCase() === expectedMtlName.toLowerCase()) {
-                 selectedMtlFile = files2[i];
-                 break;
-               }
-            }
-
-            // Uncomment to see which OBJ files are loaded: 
-            // console.log(`    📄 Found OBJ file: ${objFileName}`);
-            // if (selectedMtlFile) console.log(`    📄 Found MTL file: ${selectedMtlFile.name}`); (uncommented below)
-
-            // Extract textures from ZIP
-            const textureMap = new Map(); // originalFileName -> exportedTextureName
-            for (const texFile of textureFiles) {
-              try {
-                const texData = texFile.asUint8Array().buffer;
-                const texBaseName = `furniture_${name}_${texFile.name.split('.')[0]}`;
-                const texName = await this.addTexture(texBaseName, texFile.name, texData);
-                this.registerTextureMapKeys(textureMap, texFile.name, texName);
-              } catch (error) {
-                console.warn(`⚠️ Failed to extract texture ${texFile.name}:`, error.message);
-              }
-            }
-
-            // Parse MTL file to map materials to textures
-            let materialTextureMap = new Map();
-            if (selectedMtlFile) {
-              const mtlContent = selectedMtlFile.asText();
-              materialTextureMap = this.parseMTLTextures(mtlContent, textureMap);
-              // console.log(`    🎨 Parsed ${materialTextureMap.size} materials from MTL`);
-            } else {
-              console.warn(`    ⚠️ No MTL file found for ${objFileName}, materials will be generic`);
-            }
-
-            // Read OBJ content
-            const objContent = objFile.asText();
-
-            // Parse and integrate the OBJ file with texture mapping
-            await this.integrateOBJContent(objContent, x, y, elevation, angle, name, piece, materialTextureMap);
-
-            resolve();
-          } catch (error) {
-            reject(error);
-          }
-        },
-        zipError: (error) => {
-          reject(new Error(`Failed to load ZIP: ${error}`));
-        }
-      });
-    });
+    const data = await this._fetchAndParseModelZip(modelURL, name);
+    await this.integrateOBJContent(data.objContent, x, y, elevation, angle, name, piece, data.materialTextureMap);
   }
 
   /**
@@ -803,9 +839,9 @@ class OBJExporter {
     const texCoordOffset = this.texCoordIndex - 1;
 
     // Get target dimensions
-    const width = piece.getWidth ? piece.getWidth() : 1;
-    const depth = piece.getDepth ? piece.getDepth() : 1;
-    const height = piece.getHeight ? piece.getHeight() : 1;
+    const width = this._num(piece.getWidth ? piece.getWidth() : null, 1);
+    const depth = this._num(piece.getDepth ? piece.getDepth() : null, 1);
+    const height = this._num(piece.getHeight ? piece.getHeight() : null, 1);
 
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
@@ -1083,13 +1119,13 @@ class OBJExporter {
    * Export furniture as bounding box (fallback)
    */
   exportFurnitureBoundingBox(piece, name) {
-    const x = piece.getX ? piece.getX() : 0;
-    const y = piece.getY ? piece.getY() : 0;
-    const elevation = piece.getElevation ? piece.getElevation() : 0;
-    const width = piece.getWidth ? piece.getWidth() : 50;
-    const depth = piece.getDepth ? piece.getDepth() : 50;
-    const height = piece.getHeight ? piece.getHeight() : 50;
-    const angle = piece.getAngle ? piece.getAngle() : 0;
+    const x = this._num(piece.getX ? piece.getX() : null, 0);
+    const y = this._num(piece.getY ? piece.getY() : null, 0);
+    const elevation = this._num(piece.getElevation ? piece.getElevation() : null, 0);
+    const width = this._num(piece.getWidth ? piece.getWidth() : null, 50);
+    const depth = this._num(piece.getDepth ? piece.getDepth() : null, 50);
+    const height = this._num(piece.getHeight ? piece.getHeight() : null, 50);
+    const angle = this._num(piece.getAngle ? piece.getAngle() : null, 0);
 
     // Uncomment to debug bounding box dimensions: console.log(`    📐 Box dimensions: ${width.toFixed(1)} x ${depth.toFixed(1)} x ${height.toFixed(1)}`);
     // Uncomment to debug bounding box position: console.log(`    📍 Position: (${x.toFixed(1)}, ${y.toFixed(1)}, ${elevation.toFixed(1)}), angle: ${(angle * 180 / Math.PI).toFixed(1)}°`);
@@ -1648,16 +1684,22 @@ class OBJExporter {
     // Write vertices
     parts[idx++] = `# Vertices: ${this.vertices.length}\n`;
     for (let i = 0, len = this.vertices.length; i < len; i++) {
-      const v = this.vertices[i];
-      parts[idx++] = `v ${v[0].toFixed(p)} ${v[1].toFixed(p)} ${v[2].toFixed(p)}\n`;
+      const v = this.vertices[i] || [0, 0, 0];
+      const vx = this._num(v[0], 0);
+      const vy = this._num(v[1], 0);
+      const vz = this._num(v[2], 0);
+      parts[idx++] = `v ${vx.toFixed(p)} ${vy.toFixed(p)} ${vz.toFixed(p)}\n`;
     }
     parts[idx++] = '\n';
 
     // Write normals
     parts[idx++] = `# Normals: ${this.normals.length}\n`;
     for (let i = 0, len = this.normals.length; i < len; i++) {
-      const n = this.normals[i];
-      parts[idx++] = `vn ${n[0].toFixed(p)} ${n[1].toFixed(p)} ${n[2].toFixed(p)}\n`;
+      const n = this.normals[i] || [0, 1, 0];
+      const nx = this._num(n[0], 0);
+      const ny = this._num(n[1], 1);
+      const nz = this._num(n[2], 0);
+      parts[idx++] = `vn ${nx.toFixed(p)} ${ny.toFixed(p)} ${nz.toFixed(p)}\n`;
     }
     parts[idx++] = '\n';
 
@@ -1665,8 +1707,10 @@ class OBJExporter {
     if (this.texCoords.length > 0) {
       parts[idx++] = `# Texture coordinates: ${this.texCoords.length}\n`;
       for (let i = 0, len = this.texCoords.length; i < len; i++) {
-        const tc = this.texCoords[i];
-        parts[idx++] = `vt ${tc[0].toFixed(p)} ${tc[1].toFixed(p)}\n`;
+        const tc = this.texCoords[i] || [0, 0];
+        const tu = this._num(tc[0], 0);
+        const tv = this._num(tc[1], 0);
+        parts[idx++] = `vt ${tu.toFixed(p)} ${tv.toFixed(p)}\n`;
       }
       parts[idx++] = '\n';
     }
@@ -1682,8 +1726,8 @@ class OBJExporter {
         parts[idx++] = `\nusemtl ${currentMat}\n`;
       }
 
-      const hasTexCoords = face.texCoords[0] !== null && face.texCoords[0] !== undefined;
-      const hasNormals = face.normals[0] !== null && face.normals[0] !== undefined;
+      const hasTexCoords = face.texCoords[0] != null && face.texCoords[1] != null && face.texCoords[2] != null;
+      const hasNormals = face.normals[0] != null && face.normals[1] != null && face.normals[2] != null;
 
       if (hasTexCoords && hasNormals) {
         parts[idx++] = `f ${face.vertices[0]}/${face.texCoords[0]}/${face.normals[0]} ${face.vertices[1]}/${face.texCoords[1]}/${face.normals[1]} ${face.vertices[2]}/${face.texCoords[2]}/${face.normals[2]}\n`;
@@ -1796,6 +1840,8 @@ class OBJExporter {
     this.faces = [];
     this.materials = new Map();
     this.textures = new Map();
+    this.textureHashes = new Map();
+    this._zipCache = new Map();
     this.currentMaterial = null;
     this.vertexIndex = 1;
     this.normalIndex = 1;
@@ -1816,8 +1862,12 @@ class OBJExporter {
       // Handle SweetHome3D texture URLs
       let fetchURL = url;
 
+      // Resolve indexeddb:// or localstorage:// custom textures
+      if (url.startsWith('indexeddb://') || url.startsWith('localstorage://')) {
+        fetchURL = await this._resolveStreamURL(url);
+      }
       // Handle JAR URLs (jar:file:...!/path/to/texture.jpg)
-      if (url.startsWith('jar:')) {
+      else if (url.startsWith('jar:')) {
         const jarMatch = url.match(/jar:[^!]+!\/(.+)/);
         if (jarMatch) {
           const innerPath = jarMatch[1];
@@ -1832,36 +1882,33 @@ class OBJExporter {
       }
       // Handle data URLs - these are already usable as-is
       else if (url.startsWith('data:')) {
-        // For data URLs, we need to convert to ArrayBuffer differently
         const response = await fetch(url);
         return await response.arrayBuffer();
       }
-      // Handle absolute URLs
+      // Handle absolute URLs (rebase stale localhost/port URLs for catalog textures & /data/)
       else if (url.startsWith('http://') || url.startsWith('https://')) {
-        fetchURL = url;
+        const texMatch = url.match(/^https?:\/\/[^/]+\/(lib\/resources\/textures\/.+)$/i);
+        const dataMatch = url.match(/^https?:\/\/[^/]+\/(data\/.+)$/i);
+        fetchURL = texMatch ? texMatch[1] : (dataMatch ? dataMatch[1] : url);
       }
       // Handle relative paths
       else {
-        // Check various possible locations for textures
         if (url.startsWith('lib/')) {
-          // Already has lib/ prefix
           fetchURL = url;
         } else if (url.includes('/')) {
-          // Has a path, might be a full relative path
           fetchURL = url;
         } else {
-          // Just a filename, assume it's in the textures folder
           fetchURL = `lib/resources/textures/${url}`;
         }
       }
 
-      // Fetch image as binary data
-      const response = await fetch(fetchURL);
+      // Fetch image as binary data (include same-origin cookies for HA Ingress)
+      const response = await fetch(fetchURL, { credentials: 'same-origin' });
       if (!response.ok) {
         // Try alternative path if first attempt fails
         if (!url.startsWith('lib/') && !url.startsWith('http')) {
           const altURL = `lib/resources/textures/${url.split('/').pop()}`;
-          const altResponse = await fetch(altURL);
+          const altResponse = await fetch(altURL, { credentials: 'same-origin' });
           if (altResponse.ok) {
             const arrayBuffer = await altResponse.arrayBuffer();
             console.log(`✓ Fetched texture (alt path): ${altURL} (${(arrayBuffer.byteLength / 1024).toFixed(1)} KB)`);
@@ -2057,6 +2104,11 @@ class OBJExporter {
 
     return uvs;
   }
+}
+
+// Make OBJExporter globally accessible on window (ES6 class declarations don't attach to window)
+if (typeof window !== 'undefined') {
+  window.OBJExporter = OBJExporter;
 }
 
 // Export for use in browser and Node.js

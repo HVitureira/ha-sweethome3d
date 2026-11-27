@@ -31,6 +31,24 @@ export default defineConfig({
             return
           }
 
+          // --- listHomesExtended.php: scan test-data/ with devices/geometry flags ---
+          if (urlPath === '/listHomesExtended.php') {
+            res.setHeader('Content-Type', 'application/json')
+            if (!fs.existsSync(dataDir)) { res.end('[]'); return }
+            const homes = fs.readdirSync(dataDir)
+              .filter(f => f.endsWith('.sh3x'))
+              .map(f => {
+                const id = f.slice(0, -5)
+                return {
+                  id,
+                  hasDevices: fs.existsSync(path.join(dataDir, `${id}_devices.json`)),
+                  hasGeometry: fs.existsSync(path.join(dataDir, `${id}_geometry.zip`)),
+                }
+              })
+            res.end(JSON.stringify(homes))
+            return
+          }
+
           // --- writeData.php: write to test-data/ ---
           if (urlPath === '/writeData.php') {
             const urlObj = new URL(req.url!, `http://${req.headers.host}`)
