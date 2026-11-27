@@ -101,7 +101,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSettingsStore } from '@/stores/settingsStore'
 
@@ -287,14 +287,21 @@ function reloadIframe() {
   }, 50)
 }
 
-async function fetchHomes() {
+async function fetchHomes(preferredHomeId?: string) {
   try {
-    const resp = await fetch('listHomesExtended.php')
+    const resp = await fetch('listHomesExtended.php', { credentials: 'same-origin' })
     if (resp.ok) {
       homes.value = await resp.json()
+      if (preferredHomeId && homes.value.some(h => h.id === preferredHomeId)) {
+        selectedHomeId.value = preferredHomeId
+        return
+      }
+      if (selectedHomeId.value && homes.value.some(h => h.id === selectedHomeId.value)) {
+        return
+      }
       // Default to the currently open SH3D home if possible
-      const currentName: string =
-        (window as any).application?.getHomes?.()[0]?.getName?.() ?? ''
+      const appHomes = (window as any).application?.getHomes?.()
+      const currentName: string = appHomes?.[appHomes.length - 1]?.getName?.() ?? ''
       const match = homes.value.find(h => h.id === currentName)
       selectedHomeId.value = match?.id ?? homes.value[0]?.id ?? ''
     }
@@ -303,7 +310,13 @@ async function fetchHomes() {
   }
 }
 
+function onHomeExported(e: Event) {
+  const exportedId = (e as CustomEvent<{ homeId?: string }>).detail?.homeId
+  fetchHomes(exportedId)
+}
+
 onMounted(async () => {
+  window.addEventListener('ha-home-exported', onHomeExported)
   await settingsStore.configReady
   writeConfigToStorage()
   await fetchHomes()
@@ -315,13 +328,19 @@ onMounted(async () => {
       if (selectedHomeId.value) sendLoadHome(selectedHomeId.value)
     }, 3000)
   })
+})
 
+onUnmounted(() => {
+  window.removeEventListener('ha-home-exported', onHomeExported)
 })
 
 watch(() => route.path, (path) => {
-  if (path === '/visualizer' && hasLoaded.value) {
-    writeConfigToStorage()
-    sendConfigToIframe()
+  if (path === '/visualizer') {
+    fetchHomes()
+    if (hasLoaded.value) {
+      writeConfigToStorage()
+      sendConfigToIframe()
+    }
   }
 })
 </script>
