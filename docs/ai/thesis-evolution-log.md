@@ -34,3 +34,10 @@ Concise ledger of **architectural evolutions and core engineering trade-offs** i
 - **Rationale / Trade-off**: HA Core exposes Lovelace management exclusively over WebSocket (no REST endpoint); zero-dependency PHP avoids adding Python/Composer to the Alpine container, requiring `clear_env = no` in `php-fpm.conf` and graceful fallback for YAML/`sections` dashboards.
 - **Affected Files**: `sweethome3d/www/lib/LovelaceWs.php`, `sweethome3d/www/addDashboardCard.php`, `sweethome3d/www/listDashboards.php`, `sweethome3d/rootfs/etc/php82/php-fpm.conf`
 - **Suggested Thesis Target**: `Chapters/3. Development.tex`, `Chapters/6. Discussion.tex`, `Figures/diagrams/dashboard-integration-flow.puml`
+
+### 2026-11 — Direct Blob Export Pipeline, Deduplicated `fetch()` & Ingress-Safe Dialogs
+- **Status**: `[x] Covered`
+- **Before → After**: Global `URL.createObjectURL` / `HTMLAnchorElement.prototype.click` monkey-patching + `ZIPTools.getZIP` + native `window.confirm()`/`alert()` + `piece.getCatalogId()`-only device detection → direct `{ download: false }` Blob return from `OBJExporter`/`UnityExportUtilities`, `fetch()` with `AbortController` timeout and per-export ZIP deduplication (`URLContent` fallback for `indexeddb://`/`localstorage://`), unified multi-source HA `catalogId` resolution, in-DOM Vue confirmation modals/toasts, and atomic validated writes in `writeData.php`.
+- **Rationale / Trade-off**: Eliminates intermittent silent cancellations inside HA Ingress iframes, double-click prototype corruption, `ZIPTools.runningRequests` Promise hangs, and missed renamed HA devices; keeps `{ download: true }` as the default for backward compatibility with console/local downloads.
+- **Affected Files**: `www-vue/src/components/ExportButtons.vue`, `sweethome3d/www/lib/objExporter.js`, `sweethome3d/www/lib/unity-export-utils.js`, `sweethome3d/www/writeData.php`, `www-vue/src/views/UnityView.vue`, `sweethome3d/rootfs/etc/nginx/nginx.conf`
+- **Suggested Thesis Target**: `Chapters/5.1.3 Authoring Tool.tex`, `Figures/diagrams/authoring-export-flow.puml`, `Figures/diagrams/frontend-tier-detail.puml`, `Figures/diagrams/three-tier-component.puml`
